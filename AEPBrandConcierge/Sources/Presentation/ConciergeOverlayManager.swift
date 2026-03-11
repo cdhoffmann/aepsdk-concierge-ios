@@ -27,6 +27,11 @@ final class ConciergeOverlayManager: ObservableObject {
     /// The currently configured chat view to render as an overlay.
     @Published var chatView: ChatView?
 
+    /// Whether the compact overlay UI should be presented.
+    @Published var showingCompactOverlay = false
+    /// The currently configured compact view to render as an overlay.
+    @Published var compactView: CompactOverlayView?
+
     private init() {}
 
     /// Presents the supplied chat view as an overlay.
@@ -40,5 +45,18 @@ final class ConciergeOverlayManager: ObservableObject {
     func hideChat() {
         self.showingConcierge = false
         self.chatView = nil
+    }
+
+    /// Presents the supplied compact view as an overlay.
+    /// - Parameter compactView: A fully configured `CompactOverlayView` to overlay.
+    func showCompactOverlay(_ compactView: CompactOverlayView) {
+        self.compactView = compactView
+        self.showingCompactOverlay = true
+    }
+
+    /// Hides the compact overlay and clears the current compact view.
+    func hideCompactOverlay() {
+        self.showingCompactOverlay = false
+        self.compactView = nil
     }
 }

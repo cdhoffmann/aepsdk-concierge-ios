@@ -114,6 +114,86 @@ public extension Concierge {
         }
     }
 
+    // MARK: - Compact Overlay Mode APIs
+
+    /// Shows the Concierge compact overlay UI on top of the wrapped SwiftUI view hierarchy.
+    /// This provides a Siri-like compact interface at the bottom of the screen.
+    ///
+    /// - Parameters:
+    ///   - surfaces: The surfaces to use for the chat experience.
+    ///   - speechCapturer: Optional speech capture implementation to use.
+    ///   - textSpeaker: Optional text-to-speech implementation to use.
+    static func showCompact(surfaces: [String], speechCapturer: SpeechCapturing? = nil, textSpeaker: TextSpeaking? = nil, screenSnapshot: UIImage? = nil, additionalContext: String? = nil) {
+        // Dispatch event to request state data necessary for displaying the UI
+        let showEvent = Event(name: ConciergeConstants.EventName.SHOW_UI,
+                              type: ConciergeConstants.EventType.concierge,
+                              source: EventSource.requestContent,
+                              data: [ConciergeConstants.EventData.Key.SURFACES: surfaces])
+
+        MobileCore.dispatch(event: showEvent, timeout: ConciergeConstants.DEFAULT_TIMEOUT) { responseEvent in
+            guard let responseEvent = responseEvent,
+                  let eventData = responseEvent.data,
+                  let config = eventData[ConciergeConstants.EventData.Key.CONFIG] as? ConciergeConfiguration else {
+                Log.warning(label: ConciergeConstants.LOG_TAG, "Unable to show compact overlay - configuration is not available.")
+                return
+            }
+
+            if let speechCapturer = speechCapturer {
+                self.speechCapturer = speechCapturer
+            }
+
+            if let textSpeaker = textSpeaker {
+                self.textSpeaker = textSpeaker
+            }
+
+            // Construct and present the compact view immediately via the SwiftUI overlay.
+            let view = CompactOverlayView(
+                speechCapturer: self.speechCapturer,
+                textSpeaker: self.textSpeaker,
+                conciergeConfiguration: config,
+                screenSnapshot: screenSnapshot,
+                additionalContext: additionalContext,
+                onDismiss: { Concierge.hideCompact() }
+            )
+            Task { @MainActor in
+                ConciergeOverlayManager.shared.showCompactOverlay(view)
+            }
+        }
+    }
+
+    /// Wraps the app's content to enable the compact overlay mode with long-press gesture.
+    ///
+    /// Place the returned view near the app root to enable compact overlay presentation
+    /// triggered by a long press on the bottom-right corner of the screen.
+    ///
+    /// - Parameters:
+    ///   - content: The app's SwiftUI content.
+    ///   - surfaces: The surfaces to use for the chat experience.
+    ///   - title: Optional title shown in the chat header for subsequent sessions.
+    ///   - subtitle: Optional subtitle shown under the title for subsequent sessions.
+    /// - Returns: A view that renders `content` and conditionally overlays the compact chat UI.
+    @available(iOSApplicationExtension, unavailable)
+    static func wrapCompact<Content: View>(
+        _ content: Content,
+        surfaces: [String] = [],
+        title: String? = nil,
+        subtitle: String? = nil
+    ) -> some View {
+        if let title = title {
+            self.chatTitle = title
+        }
+        self.chatSubtitle = subtitle
+        self.surfaces = surfaces
+        return ConciergeCompactWrapper(content: content)
+    }
+
+    /// Hides the compact overlay if it is currently presented.
+    static func hideCompact() {
+        Task { @MainActor in
+            ConciergeOverlayManager.shared.hideCompactOverlay()
+        }
+    }
+
     // MARK: - UIKit Presentation API
 
     /// Presents the chat UI from a UIKit context by embedding a SwiftUI `ChatView`

@@ -35,9 +35,25 @@ struct ContentView: View {
                 return "Demo"
             }
         }
+
+        var chatTitle: String {
+            switch self {
+            case .defaultTheme, .demoTheme, .allProperties:
+                return "Concierge"
+            }
+        }
+
+        var chatSubtitle: String? {
+            switch self {
+            case .dsgTheme:
+                return nil
+            case .defaultTheme, .demoTheme, .allProperties:
+                return "Powered by Adobe"
+            }
+        }
     }
 
-    @State private var selectedThemeFile: DemoThemeFile = .defaultTheme
+    @State private var selectedThemeFile: DemoThemeFile = .dsgTheme
     @State private var loadedTheme: ConciergeTheme = ConciergeThemeLoader.default()
     @State private var themeLoadStatusText: String = ""
 
@@ -74,8 +90,8 @@ struct ContentView: View {
                             // only call needed to show the concierge ui
                             Concierge.show(
                                 surfaces: ["web://edge-int.adobedc.net/brand-concierge/pages/745F37C35E4B776E0A49421B@AdobeOrg/acom_m15/index.html"],
-                                title: "Concierge",
-                                subtitle: "Powered by Adobe"
+                                title: selectedThemeFile.chatTitle,
+                                subtitle: selectedThemeFile.chatSubtitle
                             )
                         }) {
                             Text("Open chat (SwiftUI)")
@@ -113,6 +129,35 @@ struct ContentView: View {
             )
             .conciergeTheme(loadedTheme)
             .tabItem { Label("Magic", systemImage: "sparkles.square.filled.on.square") }
+
+            // MARK: - Compact overlay mode
+
+            Concierge.wrapCompact(
+                VStack {
+                    Text("Long press on bottom-right corner")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .padding()
+
+                    Text("Hold the bottom-right corner of the screen for 0.5 seconds to activate the compact Siri-like overlay")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+
+                    Spacer()
+
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 80))
+                        .foregroundColor(Color.Brand.red.opacity(0.3))
+                        .padding(.bottom, 100)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemBackground)),
+                surfaces: ["web://edge-int.adobedc.net/brand-concierge/pages/745F37C35E4B776E0A49421B@AdobeOrg/acom_m15/index.html"]
+            )
+            .conciergeTheme(loadedTheme)
+            .tabItem { Label("Compact", systemImage: "bubble.left.and.text.bubble.right.fill") }
 
             // MARK: - UIKit example
 

@@ -34,6 +34,7 @@ public class Concierge: NSObject, Extension {
     static var chatSubtitle: String? = "Powered by Adobe"
     static var surfaces: [String] = []
     static var presentedUIKitController: UIViewController?
+    public static var additionalContextProvider: (() -> String?)? = nil
 
     // MARK: - Extension Protocol Methods
 

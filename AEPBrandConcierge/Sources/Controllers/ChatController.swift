@@ -250,7 +250,6 @@ final class ChatController: ObservableObject {
                 )
                 messages.append(message)
             }
-            return
         }
     }
 

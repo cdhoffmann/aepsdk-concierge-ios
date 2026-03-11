@@ -290,6 +290,22 @@ struct ChatMessageView: View {
                     cardWidth: theme.layout.productCardWidth,
                     cardHeight: theme.layout.productCardHeight
                 )
+                .overlay(alignment: .topTrailing) {
+                    #if DEBUG
+                    if ProductDetailCardView.showDebugOverlay {
+                        GeometryReader { geometry in
+                            Text("\(Int(geometry.size.width))×\(Int(geometry.size.height))")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.black.opacity(0.7))
+                                .cornerRadius(4)
+                                .padding(4)
+                        }
+                    }
+                    #endif
+                }
             case .actionButton:
                 actionButtonCarouselCard(data: cardData)
             }
