@@ -152,3 +152,94 @@ To dismiss the presented UI, call:
 ```swift
 Concierge.hide()
 ```
+
+---
+
+## Compact overlay
+
+The compact overlay is a minimal, Siri-like conversational UI that floats over your app content without navigating away from the current screen. It shows only the latest message exchange and an input bar on a semi-transparent backdrop.
+
+### Option A — Gesture-triggered (recommended for SwiftUI)
+
+Wrap your content with `Concierge.wrapCompact(...)`. A long-press on the bottom-right corner for 0.5 seconds activates the overlay.
+
+```swift
+var body: some View {
+    Concierge.wrapCompact(
+        AppRootView(),
+        surfaces: ["my-surface"],
+        title: "Concierge",
+        subtitle: "Powered by Adobe"
+    )
+    .conciergeTheme(theme)
+}
+```
+
+### Option B — Programmatic show / hide
+
+Show the overlay from any action (button tap, deep link, etc.):
+
+```swift
+Concierge.showCompact(surfaces: ["my-surface"])
+```
+
+Dismiss it from code:
+
+```swift
+Concierge.hideCompact()
+```
+
+### Passing screen context (optional)
+
+Capture a snapshot of the current screen and pass it to the overlay so the on-device model (iOS 26+) can extract context and pre-fill a helpful opening message. The snapshot is never sent to the chat service.
+
+```swift
+Concierge.showCompact(
+    surfaces: ["my-surface"],
+    screenSnapshot: currentScreenSnapshot
+)
+```
+
+### Passing an action log for intent insight (optional)
+
+Provide a string describing recent user actions. The on-device model summarises this into a shopping-intent bubble shown above the input bar.
+
+```swift
+// Static string
+Concierge.showCompact(
+    surfaces: ["my-surface"],
+    additionalContext: "viewed Nike Air Max, added Nike Dunk High to cart"
+)
+
+// Dynamic provider — called each time the overlay is shown
+Concierge.additionalContextProvider = {
+    return MyAnalytics.recentActionLog()
+}
+```
+
+### Voice input (optional)
+
+Pass a `SpeechCapturing` implementation to enable the mic button, and a `TextSpeaking` implementation to have responses read aloud:
+
+```swift
+Concierge.showCompact(
+    surfaces: ["my-surface"],
+    speechCapturer: MySpeechCapturer(),
+    textSpeaker: MyTextSpeaker()
+)
+```
+
+### Theme
+
+Apply `.conciergeTheme(_:)` above `wrapCompact` to share the same theme with the compact overlay and the full chat:
+
+```swift
+Concierge.wrapCompact(AppRootView(), surfaces: ["my-surface"])
+    .conciergeTheme(theme)
+```
+
+### Notes
+
+- The compact overlay window sits at `.alert + 1`, so it appears above sheets and system UI.
+- When the user taps a link or feedback button inside the overlay, it automatically expands to the full `ChatView`.
+- `wrapCompact` is unavailable in app extensions (`@available(iOSApplicationExtension, unavailable)`).
