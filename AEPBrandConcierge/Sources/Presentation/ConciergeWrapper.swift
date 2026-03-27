@@ -11,6 +11,7 @@
  */
 
 import SwiftUI
+import UIKit
 
 /// Container that overlays the Concierge chat UI on top of app content when enabled.
 struct ConciergeWrapper<Content: View>: View {
@@ -62,6 +63,19 @@ struct ConciergeWrapper<Content: View>: View {
     }
 
     private func showConcierge() {
-        Concierge.show(surfaces: Concierge.surfaces)
+        Task { @MainActor in
+            var snapshot: UIImage?
+            if let windowScene = UIApplication.shared.connectedScenes
+                .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene,
+               let window = windowScene.windows.first(where: { $0.isKeyWindow }) {
+                let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+                snapshot = renderer.image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+                }
+            }
+            let additionalContext = Concierge.additionalContextProvider?()
+            let suggestedPrompts = Concierge.suggestedPromptsProvider?()
+            Concierge.showCompact(surfaces: Concierge.surfaces, screenSnapshot: snapshot, additionalContext: additionalContext, suggestedPrompts: suggestedPrompts)
+        }
     }
 }

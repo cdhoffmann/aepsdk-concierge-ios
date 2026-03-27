@@ -35,6 +35,7 @@ public class Concierge: NSObject, Extension {
     static var surfaces: [String] = []
     static var presentedUIKitController: UIViewController?
     public static var additionalContextProvider: (() -> String?)? = nil
+    public static var suggestedPromptsProvider: (() -> [String]?)? = nil
 
     // MARK: - Extension Protocol Methods
 

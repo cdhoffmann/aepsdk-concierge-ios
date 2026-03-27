@@ -49,6 +49,7 @@ public struct CompactOverlayView: View {
     private var conciergeConfiguration: ConciergeConfiguration
     private let screenSnapshot: UIImage?
     private let additionalContext: String?
+    private let suggestedPrompts: [String]?
 
     // MARK: - UI
 
@@ -62,6 +63,7 @@ public struct CompactOverlayView: View {
         conciergeConfiguration: ConciergeConfiguration,
         screenSnapshot: UIImage? = nil,
         additionalContext: String? = nil,
+        suggestedPrompts: [String]? = nil,
         onDismiss: (() -> Void)? = nil
     ) {
         self.textSpeaker = textSpeaker
@@ -69,6 +71,7 @@ public struct CompactOverlayView: View {
         self.conciergeConfiguration = conciergeConfiguration
         self.screenSnapshot = screenSnapshot
         self.additionalContext = additionalContext
+        self.suggestedPrompts = suggestedPrompts
 
         let chatController = ChatController(
             configuration: conciergeConfiguration,
@@ -176,6 +179,35 @@ public struct CompactOverlayView: View {
                                 RoundedRectangle(cornerRadius: theme.layout.messageBorderRadius, style: .continuous)
                                     .fill(theme.colors.message.conciergeBackground.color)
                             )
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 4)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+
+                        // Suggested prompt bubbles — tappable, pre-fill the input bar
+                        if let prompts = suggestedPrompts, !prompts.isEmpty {
+                            VStack(spacing: 6) {
+                                ForEach(prompts, id: \.self) { prompt in
+                                    Button(action: {
+                                        isInputFocused = true
+                                        controller.applyTextChange(prompt)
+                                        selectedTextRange = NSRange(location: prompt.utf16.count, length: 0)
+                                    }) {
+                                        Text(prompt)
+                                            .font(.system(size: 14, weight: .regular))
+                                            .foregroundColor(theme.colors.message.conciergeText.color)
+                                            .multilineTextAlignment(.leading)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: theme.layout.messageBorderRadius, style: .continuous)
+                                                    .fill(theme.colors.message.conciergeBackground.color.opacity(0.7))
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                             .padding(.horizontal, 16)
                             .padding(.bottom, 4)
                             .transition(.move(edge: .bottom).combined(with: .opacity))

@@ -93,7 +93,8 @@ struct ConciergeCompactWrapper<Content: View>: View {
                 }
             }
             let additionalContext = Concierge.additionalContextProvider?()
-            Concierge.showCompact(surfaces: Concierge.surfaces, screenSnapshot: snapshot, additionalContext: additionalContext)
+            let suggestedPrompts = Concierge.suggestedPromptsProvider?()
+            Concierge.showCompact(surfaces: Concierge.surfaces, screenSnapshot: snapshot, additionalContext: additionalContext, suggestedPrompts: suggestedPrompts)
         }
     }
 }

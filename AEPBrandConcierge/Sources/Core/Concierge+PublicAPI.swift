@@ -123,7 +123,7 @@ public extension Concierge {
     ///   - surfaces: The surfaces to use for the chat experience.
     ///   - speechCapturer: Optional speech capture implementation to use.
     ///   - textSpeaker: Optional text-to-speech implementation to use.
-    static func showCompact(surfaces: [String], speechCapturer: SpeechCapturing? = nil, textSpeaker: TextSpeaking? = nil, screenSnapshot: UIImage? = nil, additionalContext: String? = nil) {
+    static func showCompact(surfaces: [String], speechCapturer: SpeechCapturing? = nil, textSpeaker: TextSpeaking? = nil, screenSnapshot: UIImage? = nil, additionalContext: String? = nil, suggestedPrompts: [String]? = nil) {
         // Dispatch event to request state data necessary for displaying the UI
         let showEvent = Event(name: ConciergeConstants.EventName.SHOW_UI,
                               type: ConciergeConstants.EventType.concierge,
@@ -153,6 +153,7 @@ public extension Concierge {
                 conciergeConfiguration: config,
                 screenSnapshot: screenSnapshot,
                 additionalContext: additionalContext,
+                suggestedPrompts: suggestedPrompts,
                 onDismiss: { Concierge.hideCompact() }
             )
             Task { @MainActor in
