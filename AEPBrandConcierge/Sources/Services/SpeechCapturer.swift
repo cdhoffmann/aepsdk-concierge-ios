@@ -34,32 +34,50 @@ class SpeechCapturer: SpeechCapturing {
     private var currentTranscription = ""
     private var hasInputTapInstalled = false
 
+    /// Guards all "Silence detection" and "Ambient noise floor" state below: it's written from the main thread
+    /// (`configureSilenceDetection`, `resetSilenceDetectionState` via `beginCapture`/route-change restart) and
+    /// read/written from Core Audio's realtime tap-callback thread (`processAudioLevel` and everything it calls).
+    /// `AVAudioEngine.stop()`/`removeTap` don't document a guarantee that an in-flight tap callback has returned
+    /// before they do, so this can't safely rely on call ordering alone — particularly `noiseFloorCalibrationSamples`,
+    /// where a concurrent append/reassign on an `Array` from two threads is undefined behavior, not just a stale read.
+    private let silenceDetectionLock = NSLock()
+
     /// Silence detection
     private var silenceThreshold: Float = 0.02
     private var silenceDuration: TimeInterval = 2.0
-    private var silenceStart: Date?
-    private var hasSpokeOnce = false
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests` by setting a past `Date` to
+    /// deterministically simulate elapsed silence duration without a real sleep.
+    var silenceStart: Date?
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests`.
+    var hasSpokeOnce = false
 
     /// Ambient noise floor (raw RMS, uncompensated), calibrated at the start of each capture and slowly adapted
     /// during quiet periods before speech is first detected. Used only to compute `gainCompensatedRMS`.
-    private var noiseFloor: Float?
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests`.
+    var noiseFloor: Float?
     private var noiseFloorCalibrationSamples: [Float] = []
-    private var captureStartTime: Date?
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests` by setting a past `Date` to
+    /// deterministically simulate an elapsed calibration window without a real sleep.
+    var captureStartTime: Date?
 
     /// How long at the start of a capture to sample ambient noise before making speech/silence decisions.
-    private static let noiseFloorCalibrationDuration: TimeInterval = 0.3
+    static let noiseFloorCalibrationDuration: TimeInterval = 0.3
     /// How quickly the noise floor drifts toward newly observed quiet samples (0...1, higher = faster).
-    private static let noiseFloorAdaptationRate: Float = 0.05
+    static let noiseFloorAdaptationRate: Float = 0.05
     /// Hard floor under the noise floor. Not just a divide-by-zero guard — it caps how large the compensation
     /// gain below can get. Some mics (e.g. AirPods, calibrated as low as ~0.00005 RMS in testing) are so much
     /// quieter than a phone's built-in mic (~0.0002-0.0006 RMS) that an uncapped gain amplifies ordinary
     /// breathing/mouth noise after speech ends (~0.0003-0.0005 RMS observed) past `silenceThreshold`, so the
     /// user is never detected as having gone quiet. This value is set above that observed non-speech ceiling.
-    private static let minimumNoiseFloorRMS: Float = 0.0005
-    /// What a properly auto-gain-controlled ambient floor is assumed to look like — chosen so the *default*
-    /// `silenceThreshold` (0.02) requires roughly 3x the calibrated floor to count as speech, which is what we
-    /// validated against real on-device RMS captures during the "voice to text is endless" investigation.
-    private static let targetFloorReferenceRMS: Float = 0.02 / 3.0
+    static let minimumNoiseFloorRMS: Float = 0.0005
+    /// What a properly auto-gain-controlled ambient floor is assumed to look like — fixed to the *default*
+    /// `silenceThreshold` (0.02) rather than derived from the live, configurable `silenceThreshold`. Deriving it
+    /// from the live value would cancel out in `gainCompensatedRMS`'s comparison against that same value, making
+    /// `silenceThreshold` have no effect on sensitivity; keeping this fixed is what makes the live threshold scale
+    /// the required floor-multiple correctly (higher threshold -> proportionally more floor required -> less
+    /// sensitive, per its documented meaning). 3x is what we validated on real device RMS at the default value
+    /// during the "voice to text is endless" investigation — thresholds far from 0.02 are not on-device validated.
+    static let targetFloorReferenceRMS: Float = 0.02 / 3.0
 
     /// Avoid overlapping pipeline restarts when route notifications fire in quick succession.
     private var isRestartingCaptureForRouteChange = false
@@ -89,6 +107,8 @@ class SpeechCapturer: SpeechCapturing {
     func configureSilenceDetection(threshold: Float, duration: TimeInterval) {
         let resolvedThreshold = threshold > 0 ? threshold : 0.02
         let resolvedDuration = duration > 0 ? duration : 2.0
+        silenceDetectionLock.lock()
+        defer { silenceDetectionLock.unlock() }
         silenceThreshold = resolvedThreshold
         silenceDuration = resolvedDuration
     }
@@ -171,7 +191,10 @@ class SpeechCapturer: SpeechCapturing {
     /// Resets noise-floor calibration and speech/silence tracking without touching `currentTranscription`,
     /// so a mid-capture restart (e.g. `restartLiveCaptureAfterRouteChange`) recalibrates against the new
     /// input device instead of reusing a floor calibrated for the previous one.
-    private func resetSilenceDetectionState() {
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests`.
+    func resetSilenceDetectionState() {
+        silenceDetectionLock.lock()
+        defer { silenceDetectionLock.unlock() }
         silenceStart = nil
         hasSpokeOnce = false
         noiseFloor = nil
@@ -348,6 +371,12 @@ class SpeechCapturer: SpeechCapturing {
 
         guard let rms = rootMeanSquare else { return }
 
+        // Locked for the whole section below: `calibratedNoiseFloor`/`detectSilence` read and write the same
+        // noise-floor/silence-tracking state that `configureSilenceDetection`/`resetSilenceDetectionState` write
+        // from the main thread — see `silenceDetectionLock`'s declaration.
+        silenceDetectionLock.lock()
+        defer { silenceDetectionLock.unlock() }
+
         guard let floor = calibratedNoiseFloor(for: rms) else {
             // Still calibrating the noise floor — no speech/silence decision or meaningful level yet.
             DispatchQueue.main.async { [weak self] in self?.audioLevelHandler?(0) }
@@ -365,7 +394,8 @@ class SpeechCapturer: SpeechCapturing {
     /// Establishes an ambient noise floor over the first `noiseFloorCalibrationDuration` of each capture by
     /// averaging RMS samples, then returns that floor (and keeps it slowly adapting — see `detectSilence`).
     /// Returns `nil` while still calibrating.
-    private func calibratedNoiseFloor(for rms: Float) -> Float? {
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests`.
+    func calibratedNoiseFloor(for rms: Float) -> Float? {
         if let floor = noiseFloor {
             return floor
         }
@@ -385,7 +415,8 @@ class SpeechCapturer: SpeechCapturing {
     /// `silenceThreshold` and the waveform's `/0.2` normalization assume — see the "voice to text is endless"
     /// investigation. Rescaling by the calibrated floor's ratio to `targetFloorReferenceRMS` restores those
     /// original absolute-RMS assumptions without changing `silenceThreshold`'s public meaning or default.
-    private func gainCompensatedRMS(rms: Float, floor: Float) -> Float {
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests`.
+    func gainCompensatedRMS(rms: Float, floor: Float) -> Float {
         let gain = Self.targetFloorReferenceRMS / max(floor, Self.minimumNoiseFloorRMS)
         return rms * gain
     }
@@ -393,7 +424,8 @@ class SpeechCapturer: SpeechCapturing {
     /// Silence detection against the gain-compensated RMS. A sample counts as speech once it exceeds
     /// `silenceThreshold`; the underlying noise floor keeps drifting slowly before speech is first detected so
     /// it tracks a slowly-changing environment (e.g. HVAC turning on) before the user starts talking.
-    private func detectSilence(correctedRms: Float, rawRms: Float, floor: Float) {
+    /// Internal rather than private: unit-tested directly in `SpeechCapturerTests`.
+    func detectSilence(correctedRms: Float, rawRms: Float, floor: Float) {
         let now = Date()
 
         if correctedRms > silenceThreshold {

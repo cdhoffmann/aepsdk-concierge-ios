@@ -89,6 +89,7 @@
 		24CAB3602F2D579B00CEE013 /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CAB35B2F2D579B00CEE013 /* SessionManagerTests.swift */; };
 		24CAB3612F2D579B00CEE013 /* SourceCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CAB35D2F2D579B00CEE013 /* SourceCodableTests.swift */; };
 		24CAB3622F2D579B00CEE013 /* SpeechControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CAB35E2F2D579B00CEE013 /* SpeechControllerTests.swift */; };
+		600E9EA5E91D0A6999BFA625 /* SpeechCapturerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78116DF64B3E7886464E3576 /* SpeechCapturerTests.swift */; };
 		24CAB3632F2D579B00CEE013 /* FeedbackSentimentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CAB3592F2D579B00CEE013 /* FeedbackSentimentTests.swift */; };
 		24CAB3642F2D579B00CEE013 /* SharedStateResultConciergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CAB35C2F2D579B00CEE013 /* SharedStateResultConciergeTests.swift */; };
 		24CAB3652F2D579B00CEE013 /* StringFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CAB35F2F2D579B00CEE013 /* StringFormattingTests.swift */; };
@@ -311,6 +312,7 @@
 		24CAB35C2F2D579B00CEE013 /* SharedStateResultConciergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStateResultConciergeTests.swift; sourceTree = "<group>"; };
 		24CAB35D2F2D579B00CEE013 /* SourceCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceCodableTests.swift; sourceTree = "<group>"; };
 		24CAB35E2F2D579B00CEE013 /* SpeechControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechControllerTests.swift; sourceTree = "<group>"; };
+		78116DF64B3E7886464E3576 /* SpeechCapturerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechCapturerTests.swift; sourceTree = "<group>"; };
 		24CAB35F2F2D579B00CEE013 /* StringFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringFormattingTests.swift; sourceTree = "<group>"; };
 		24CAB3702F5E000100CEE070 /* ConciergeServiceIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConciergeServiceIdentityTests.swift; sourceTree = "<group>"; };
 		24CAB38B2F3E636200CEE013 /* ConciergeLinkHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConciergeLinkHandler.swift; sourceTree = "<group>"; };
@@ -722,6 +724,7 @@
 				24CAB35B2F2D579B00CEE013 /* SessionManagerTests.swift */,
 				24CAB35C2F2D579B00CEE013 /* SharedStateResultConciergeTests.swift */,
 				24CAB35D2F2D579B00CEE013 /* SourceCodableTests.swift */,
+				78116DF64B3E7886464E3576 /* SpeechCapturerTests.swift */,
 				24CAB35E2F2D579B00CEE013 /* SpeechControllerTests.swift */,
 				24CAB35F2F2D579B00CEE013 /* StringFormattingTests.swift */,
 				4CDB0DCC2EC82CA2000B85D0 /* ThemeCSSConverterTests.swift */,
@@ -1297,6 +1300,7 @@
 				24CAB3602F2D579B00CEE013 /* SessionManagerTests.swift in Sources */,
 				24CAB3612F2D579B00CEE013 /* SourceCodableTests.swift in Sources */,
 				24CAB3622F2D579B00CEE013 /* SpeechControllerTests.swift in Sources */,
+				600E9EA5E91D0A6999BFA625 /* SpeechCapturerTests.swift in Sources */,
 				24CAB3632F2D579B00CEE013 /* FeedbackSentimentTests.swift in Sources */,
 				24CAB3642F2D579B00CEE013 /* SharedStateResultConciergeTests.swift in Sources */,
 				24CAB3652F2D579B00CEE013 /* StringFormattingTests.swift in Sources */,
