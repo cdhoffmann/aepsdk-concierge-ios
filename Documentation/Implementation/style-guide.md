@@ -603,6 +603,8 @@ Visual styling using CSS-like variable names. All properties in the `theme` obje
 | `--input-send-arrow-background-color` | `colors.input.sendArrowBackgroundColor` | `Color?` | `nil` | Arrow-style send button circle background |
 | `--input-mic-icon-color` | `colors.input.micIconColor` | `Color?` | `nil` | Mic button icon tint. Falls back to `--color-primary`. |
 | `--input-mic-recording-icon-color` | `colors.input.micRecordingIconColor` | `Color?` | `nil` | Stop/recording button icon color. Falls back to white. |
+| `--input-mic-waveform-gradient-start-color` | `colors.input.micWaveformGradientStart` | `Color?` | `nil` | Top color of the listening waveform bars' gradient. Requires the end color to also be set; otherwise falls back to `--color-primary`. |
+| `--input-mic-waveform-gradient-end-color` | `colors.input.micWaveformGradientEnd` | `Color?` | `nil` | Bottom color of the listening waveform bars' gradient. Requires the start color to also be set; otherwise falls back to `--color-primary`. |
 
 ### Colors - Welcome Prompts
 
@@ -1045,6 +1047,8 @@ Visual styling using CSS-like variable names. All properties in the `theme` obje
     "--input-send-arrow-background-color": "",
     "--input-mic-icon-color": "",
     "--input-mic-recording-icon-color": "",
+    "--input-mic-waveform-gradient-start-color": "",
+    "--input-mic-waveform-gradient-end-color": "",
     "--color-container": "#F0F0F0",
     "--suggestion-background-color": "#F0F0F0",
     "--suggestion-text-color": "#131313",
@@ -1230,6 +1234,8 @@ This section documents which properties are fully implemented, partially impleme
 | `--input-send-arrow-background-color` | ✅ | Used in ComposerEditingView for arrow-style send button |
 | `--input-mic-icon-color` | ✅ | Used in ComposerEditingView |
 | `--input-mic-recording-icon-color` | ✅ | Used in ComposerEditingView for stop recording button |
+| `--input-mic-waveform-gradient-start-color` | ✅ | Used in AudioWaveformView for the listening waveform bar gradient |
+| `--input-mic-waveform-gradient-end-color` | ✅ | Used in AudioWaveformView for the listening waveform bar gradient |
 | `--welcome-prompt-background-color` | ✅ | Used in ChatMessageView for prompt suggestion cards |
 | `--welcome-prompt-text-color` | ✅ | Used in ChatMessageView for prompt suggestion text |
 
