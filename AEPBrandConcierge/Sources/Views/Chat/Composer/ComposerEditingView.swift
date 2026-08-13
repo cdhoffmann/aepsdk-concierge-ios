@@ -35,13 +35,18 @@ struct ComposerEditingView: View {
     /// Minimum height of the single-line input row, shared by the text field and every icon in
     /// this row so they stay aligned. Not theme-configurable — it's a UX/tap-target floor, not a
     /// brand value, matching the other tap targets sized via `theme.layout.inputButtonHeight`.
-    private static let minimumRowHeight: CGFloat = 40
+    static let minimumRowHeight: CGFloat = 40
 
-    /// Bottom padding that centers an `inputButtonHeight`-tall icon within `minimumRowHeight` at
-    /// the single-line resting state, while still anchoring it to the bottom (last-line) edge as
-    /// the row grows for multi-line text — the same recipe used by every icon in this HStack.
+    /// Bottom padding that centers an `iconHeight`-tall icon within `rowHeight` at the
+    /// single-line resting state, while still anchoring it to the bottom (last-line) edge as the
+    /// row grows for multi-line text — the same recipe used by every icon in this HStack. Pulled
+    /// out as a pure function so the centering math is unit-testable without rendering the view.
+    static func iconBottomPadding(rowHeight: CGFloat = minimumRowHeight, iconHeight: CGFloat) -> CGFloat {
+        max(0, (rowHeight - iconHeight) / 2)
+    }
+
     private var iconBottomPadding: CGFloat {
-        max(0, (Self.minimumRowHeight - theme.layout.inputButtonHeight) / 2)
+        Self.iconBottomPadding(iconHeight: theme.layout.inputButtonHeight)
     }
 
     private var hasText: Bool {
