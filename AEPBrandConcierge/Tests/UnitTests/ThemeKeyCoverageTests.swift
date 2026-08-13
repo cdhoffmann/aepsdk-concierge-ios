@@ -296,6 +296,8 @@ private extension ThemeKeyCoverageTests {
         "input-send-arrow-background-color": "colors.input.sendArrowBackgroundColor",
         "input-mic-icon-color": "colors.input.micIconColor",
         "input-mic-recording-icon-color": "colors.input.micRecordingIconColor",
+        "input-mic-waveform-gradient-start-color": "colors.input.micWaveformGradientStart",
+        "input-mic-waveform-gradient-end-color": "colors.input.micWaveformGradientEnd",
 
         // Colors - Welcome Prompts
         "welcome-prompt-background-color": "colors.welcomePrompt.backgroundColor",
