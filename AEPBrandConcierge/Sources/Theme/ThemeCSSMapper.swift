@@ -230,6 +230,8 @@ public enum CSSKeyMapper {
         "input-send-arrow-background-color": { cssValue, theme in theme.colors.input.sendArrowBackgroundColor = CSSValueConverter.parseColor(cssValue) },
         "input-mic-icon-color": { cssValue, theme in theme.colors.input.micIconColor = CSSValueConverter.parseColor(cssValue) },
         "input-mic-recording-icon-color": { cssValue, theme in theme.colors.input.micRecordingIconColor = CSSValueConverter.parseColor(cssValue) },
+        "input-mic-waveform-gradient-start-color": { cssValue, theme in theme.colors.input.micWaveformGradientStart = CSSValueConverter.parseColor(cssValue) },
+        "input-mic-waveform-gradient-end-color": { cssValue, theme in theme.colors.input.micWaveformGradientEnd = CSSValueConverter.parseColor(cssValue) },
 
         // Colors - Welcome Prompts
         "welcome-prompt-background-color": { cssValue, theme in theme.colors.welcomePrompt.backgroundColor = CSSValueConverter.parseColor(cssValue) },

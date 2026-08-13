@@ -104,6 +104,8 @@ public struct ConciergeInputColors: Codable {
     public var sendArrowBackgroundColor: CodableColor?
     public var micIconColor: CodableColor?
     public var micRecordingIconColor: CodableColor?
+    public var micWaveformGradientStart: CodableColor?
+    public var micWaveformGradientEnd: CodableColor?
 
     public init(
         background: CodableColor = CodableColor(Color.white),
@@ -114,7 +116,9 @@ public struct ConciergeInputColors: Codable {
         sendArrowIconColor: CodableColor? = nil,
         sendArrowBackgroundColor: CodableColor? = nil,
         micIconColor: CodableColor? = nil,
-        micRecordingIconColor: CodableColor? = nil
+        micRecordingIconColor: CodableColor? = nil,
+        micWaveformGradientStart: CodableColor? = nil,
+        micWaveformGradientEnd: CodableColor? = nil
     ) {
         self.background = background
         self.text = text
@@ -125,6 +129,8 @@ public struct ConciergeInputColors: Codable {
         self.sendArrowBackgroundColor = sendArrowBackgroundColor
         self.micIconColor = micIconColor
         self.micRecordingIconColor = micRecordingIconColor
+        self.micWaveformGradientStart = micWaveformGradientStart
+        self.micWaveformGradientEnd = micWaveformGradientEnd
     }
 }
 

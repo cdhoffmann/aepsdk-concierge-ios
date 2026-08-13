@@ -80,7 +80,9 @@ struct ComposerEditingView: View {
                 // Waveform visual indicator
                 AudioWaveformView(
                     audioLevel: audioLevel,
-                    barColor: theme.colors.primary.primary.color
+                    barColor: theme.colors.primary.primary.color,
+                    gradientStart: theme.colors.input.micWaveformGradientStart?.color,
+                    gradientEnd: theme.colors.input.micWaveformGradientEnd?.color
                 )
                 .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight)
                 .padding(.bottom, 8)
