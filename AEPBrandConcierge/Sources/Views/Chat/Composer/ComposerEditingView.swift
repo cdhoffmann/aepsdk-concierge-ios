@@ -32,8 +32,26 @@ struct ComposerEditingView: View {
     let audioLevel: Float
     let onSend: () -> Void
 
+    /// Minimum height of the single-line input row, shared by the text field and every icon in
+    /// this row so they stay aligned. Not theme-configurable — it's a UX/tap-target floor, not a
+    /// brand value, matching the other tap targets sized via `theme.layout.inputButtonHeight`.
+    private static let minimumRowHeight: CGFloat = 40
+
+    /// Bottom padding that centers an `inputButtonHeight`-tall icon within `minimumRowHeight` at
+    /// the single-line resting state, while still anchoring it to the bottom (last-line) edge as
+    /// the row grows for multi-line text — the same recipe used by every icon in this HStack.
+    private var iconBottomPadding: CGFloat {
+        max(0, (Self.minimumRowHeight - theme.layout.inputButtonHeight) / 2)
+    }
+
     private var hasText: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Leading icon path (e.g. a brand icon) shown before the text field, from
+    /// `theme.behavior.input.showAiChatIcon`. Empty when no asset is configured.
+    private var leadingIconPath: String {
+        theme.components.inputBar.icon?.icon ?? ""
     }
 
     /// Fade + horizontal slide transition animation.
@@ -43,6 +61,19 @@ struct ComposerEditingView: View {
 
     var body: some View {
         HStack(alignment: .bottom) {
+            if !leadingIconPath.isEmpty {
+                // Local asset name or a remote http(s) URL; unresolvable paths render nothing.
+                LocalAssetImageView(
+                    iconPath: leadingIconPath,
+                    width: theme.layout.inputButtonWidth,
+                    height: theme.layout.inputButtonHeight,
+                    contentMode: .fit,
+                    clipToCircle: false
+                )
+                .accessibilityLabel(theme.text.inputAiChatIconTooltip)
+                .padding(.bottom, iconBottomPadding)
+            }
+
             SelectableTextView(
                 text: $inputText,
                 selectedRange: $selectedRange,
@@ -57,7 +88,7 @@ struct ComposerEditingView: View {
                 maxLines: theme.behavior.input.disableMultiline ? 1 : 10,
                 onEditingChanged: onEditingChanged
             )
-            .frame(height: max(40, measuredHeight))
+            .frame(height: max(Self.minimumRowHeight, measuredHeight))
             .animation(.easeInOut(duration: 0.15), value: measuredHeight)
 
             if hasText, inputState != .recording {
@@ -73,7 +104,7 @@ struct ComposerEditingView: View {
                 .contentShape(Rectangle())
                 .accessibilityLabel("Clear text")
                 .transition(buttonTransition)
-                .padding(.bottom, 8)
+                .padding(.bottom, iconBottomPadding)
             }
 
             if case .recording = inputState {
@@ -83,7 +114,7 @@ struct ComposerEditingView: View {
                     barColor: theme.colors.primary.primary.color
                 )
                 .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight)
-                .padding(.bottom, 8)
+                .padding(.bottom, iconBottomPadding)
 
                 // Dedicated stop button (icon configurable via theme)
                 Button(action: onStopRecording) {
@@ -105,7 +136,7 @@ struct ComposerEditingView: View {
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Stop recording")
-                .padding(.bottom, 8)
+                .padding(.bottom, iconBottomPadding)
             } else if hasText {
                 // Send button appears in the same slot once text is present
                 if theme.behavior.input.sendButtonStyle == "arrow" {
@@ -122,7 +153,7 @@ struct ComposerEditingView: View {
                     .accessibilityLabel(theme.text.inputSendAria)
                     .disabled(!sendEnabled)
                     .transition(buttonTransition)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, iconBottomPadding)
                 } else {
                     Button(action: onSend) {
                         BrandIcon(assetName: "S2_Icon_Send_20_N", systemName: "paperplane")
@@ -138,7 +169,7 @@ struct ComposerEditingView: View {
                     .accessibilityLabel(theme.text.inputSendAria)
                     .disabled(!sendEnabled)
                     .transition(buttonTransition)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, iconBottomPadding)
                 }
             } else if showMic {
                 // Mic button when idle with no text
@@ -152,7 +183,7 @@ struct ComposerEditingView: View {
                 .accessibilityLabel(theme.text.inputMicAria)
                 .disabled(!micEnabled)
                 .transition(buttonTransition)
-                .padding(.bottom, 8)
+                .padding(.bottom, iconBottomPadding)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: inputState)
