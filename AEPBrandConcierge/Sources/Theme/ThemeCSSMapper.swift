@@ -65,9 +65,16 @@ public enum CSSKeyMapper {
             theme.colors.input.text = CSSValueConverter.parseColor(cssValue)
         },
         "input-outline-color": { cssValue, theme in
-            let parsed = CSSValueConverter.parseColorOrGradient(cssValue)
-            theme.colors.input.outline = parsed.color
-            theme.colors.input.outlineGradient = parsed.gradient
+            theme.colors.input.outline = CSSValueConverter.parseColor(cssValue)
+        },
+        "input-outline-gradient-start-color": { cssValue, theme in
+            theme.colors.input.outlineGradient = CSSKeyMapper.withGradientStart(theme.colors.input.outlineGradient, cssValue)
+        },
+        "input-outline-gradient-end-color": { cssValue, theme in
+            theme.colors.input.outlineGradient = CSSKeyMapper.withGradientEnd(theme.colors.input.outlineGradient, cssValue)
+        },
+        "input-outline-gradient-angle": { cssValue, theme in
+            theme.colors.input.outlineGradient = CSSKeyMapper.withGradientAngle(theme.colors.input.outlineGradient, cssValue)
         },
         "input-focus-outline-color": { cssValue, theme in theme.colors.input.outlineFocus = CSSValueConverter.parseColor(cssValue) },
 
@@ -225,14 +232,28 @@ public enum CSSKeyMapper {
         "input-send-icon-color": { cssValue, theme in theme.colors.input.sendIconColor = CSSValueConverter.parseColor(cssValue) },
         "input-send-arrow-icon-color": { cssValue, theme in theme.colors.input.sendArrowIconColor = CSSValueConverter.parseColor(cssValue) },
         "input-send-arrow-background-color": { cssValue, theme in
-            let parsed = CSSValueConverter.parseColorOrGradient(cssValue)
-            theme.colors.input.sendArrowBackgroundColor = parsed.color
-            theme.colors.input.sendArrowBackgroundGradient = parsed.gradient
+            theme.colors.input.sendArrowBackgroundColor = CSSValueConverter.parseColor(cssValue)
+        },
+        "input-send-arrow-background-gradient-start-color": { cssValue, theme in
+            theme.colors.input.sendArrowBackgroundGradient = CSSKeyMapper.withGradientStart(theme.colors.input.sendArrowBackgroundGradient, cssValue)
+        },
+        "input-send-arrow-background-gradient-end-color": { cssValue, theme in
+            theme.colors.input.sendArrowBackgroundGradient = CSSKeyMapper.withGradientEnd(theme.colors.input.sendArrowBackgroundGradient, cssValue)
+        },
+        "input-send-arrow-background-gradient-angle": { cssValue, theme in
+            theme.colors.input.sendArrowBackgroundGradient = CSSKeyMapper.withGradientAngle(theme.colors.input.sendArrowBackgroundGradient, cssValue)
         },
         "input-mic-icon-color": { cssValue, theme in
-            let parsed = CSSValueConverter.parseColorOrGradient(cssValue)
-            theme.colors.input.micIconColor = parsed.color
-            theme.colors.input.micIconGradient = parsed.gradient
+            theme.colors.input.micIconColor = CSSValueConverter.parseColor(cssValue)
+        },
+        "input-mic-icon-gradient-start-color": { cssValue, theme in
+            theme.colors.input.micIconGradient = CSSKeyMapper.withGradientStart(theme.colors.input.micIconGradient, cssValue)
+        },
+        "input-mic-icon-gradient-end-color": { cssValue, theme in
+            theme.colors.input.micIconGradient = CSSKeyMapper.withGradientEnd(theme.colors.input.micIconGradient, cssValue)
+        },
+        "input-mic-icon-gradient-angle": { cssValue, theme in
+            theme.colors.input.micIconGradient = CSSKeyMapper.withGradientAngle(theme.colors.input.micIconGradient, cssValue)
         },
         "input-mic-recording-icon-color": { cssValue, theme in theme.colors.input.micRecordingIconColor = CSSValueConverter.parseColor(cssValue) },
         "input-mic-waveform-gradient-start-color": { cssValue, theme in theme.colors.input.micWaveformGradientStart = CSSValueConverter.parseColor(cssValue) },
@@ -292,5 +313,25 @@ public enum CSSKeyMapper {
         } else {
             Log.debug(label: ConciergeConstants.LOG_TAG, "Unknown CSS key '\(normalizedKey)' ignored.")
         }
+    }
+
+    /// Each `ConciergeGradient` is configured via 3 independent CSS keys (start color, end color, angle).
+    /// These helpers apply one field at a time on top of whatever gradient (if any) prior keys already built.
+    static func withGradientStart(_ existing: ConciergeGradient?, _ cssValue: String) -> ConciergeGradient {
+        var gradient = existing ?? ConciergeGradient(startColor: CodableColor(.clear), endColor: CodableColor(.clear))
+        gradient.startColor = CSSValueConverter.parseColor(cssValue)
+        return gradient
+    }
+
+    static func withGradientEnd(_ existing: ConciergeGradient?, _ cssValue: String) -> ConciergeGradient {
+        var gradient = existing ?? ConciergeGradient(startColor: CodableColor(.clear), endColor: CodableColor(.clear))
+        gradient.endColor = CSSValueConverter.parseColor(cssValue)
+        return gradient
+    }
+
+    static func withGradientAngle(_ existing: ConciergeGradient?, _ cssValue: String) -> ConciergeGradient {
+        var gradient = existing ?? ConciergeGradient(startColor: CodableColor(.clear), endColor: CodableColor(.clear))
+        gradient.angle = CSSValueConverter.parseGradientAngle(cssValue)
+        return gradient
     }
 }

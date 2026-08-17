@@ -160,6 +160,9 @@ private extension ThemeKeyCoverageTests {
         "input-background": "colors.input.background",
         "input-text-color": "colors.input.text",
         "input-outline-color": "colors.input.outline",
+        "input-outline-gradient-start-color": "colors.input.outlineGradient",
+        "input-outline-gradient-end-color": "colors.input.outlineGradient",
+        "input-outline-gradient-angle": "colors.input.outlineGradient",
         "input-focus-outline-color": "colors.input.outlineFocus",
 
         // Colors - Feedback
@@ -294,7 +297,13 @@ private extension ThemeKeyCoverageTests {
         "input-send-icon-color": "colors.input.sendIconColor",
         "input-send-arrow-icon-color": "colors.input.sendArrowIconColor",
         "input-send-arrow-background-color": "colors.input.sendArrowBackgroundColor",
+        "input-send-arrow-background-gradient-start-color": "colors.input.sendArrowBackgroundGradient",
+        "input-send-arrow-background-gradient-end-color": "colors.input.sendArrowBackgroundGradient",
+        "input-send-arrow-background-gradient-angle": "colors.input.sendArrowBackgroundGradient",
         "input-mic-icon-color": "colors.input.micIconColor",
+        "input-mic-icon-gradient-start-color": "colors.input.micIconGradient",
+        "input-mic-icon-gradient-end-color": "colors.input.micIconGradient",
+        "input-mic-icon-gradient-angle": "colors.input.micIconGradient",
         "input-mic-recording-icon-color": "colors.input.micRecordingIconColor",
         "input-mic-waveform-gradient-start-color": "colors.input.micWaveformGradientStart",
         "input-mic-waveform-gradient-end-color": "colors.input.micWaveformGradientEnd",
@@ -409,15 +418,6 @@ private extension ThemeKeyCoverageTests {
         // Welcome prompt colors are optional and covered by CSS mappings (nil by default).
         // Input icon colors are optional (nil by default), covered by CSS mappings.
         // These are reported as leaf optionals that don't have values at init.
-
-        // Gradient variants share a single CSS key with their solid-color sibling (ex: "input-outline-color"
-        // sets `outline` for a solid hex value or `outlineGradient` for a "linear-gradient(...)" value), so
-        // they can't be expressed 1:1 in supportedCSSKeyToThemePropertyPath alongside their sibling.
-        if path == "colors.input.outlineGradient"
-            || path == "colors.input.micIconGradient"
-            || path == "colors.input.sendArrowBackgroundGradient" {
-            return true
-        }
 
         // Welcome screen layout tokens are optional (nil by default).
         // They are covered by CSS key mappings but default to nil.

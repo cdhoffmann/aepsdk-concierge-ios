@@ -336,22 +336,7 @@ final class ThemeCSSMapperTests: XCTestCase {
         XCTAssertEqual(theme.layout.inputHeight, originalInputHeight)
     }
     
-    func test_inputOutlineColor_gradient_setsGradientAndClearsSolidColor() {
-        // Given
-        var theme = ConciergeTheme()
-        let cssKey = "input-outline-color"
-        let cssValue = "linear-gradient(to right, #000000, #ffffff)"
-
-        // When
-        CSSKeyMapper.apply(cssKey: cssKey, cssValue: cssValue, to: &theme)
-
-        // Then
-        XCTAssertNil(theme.colors.input.outline)
-        XCTAssertEqual(theme.colors.input.outlineGradient?.angle, 90)
-        XCTAssertEqual(theme.colors.input.outlineGradient?.stops.count, 2)
-    }
-
-    func test_inputOutlineColor_solidColor_setsValueAndClearsGradient() {
+    func test_inputOutlineColor_solidColor_setsValue() {
         // Given
         var theme = ConciergeTheme()
         let cssKey = "input-outline-color"
@@ -361,39 +346,61 @@ final class ThemeCSSMapperTests: XCTestCase {
         CSSKeyMapper.apply(cssKey: cssKey, cssValue: cssValue, to: &theme)
 
         // Then
-        XCTAssertNotNil(theme.colors.input.outline)
         XCTAssertEqual(theme.colors.input.outline?.color.toHexString(), "#4B75FF")
         XCTAssertNil(theme.colors.input.outlineGradient)
     }
 
-    func test_inputMicIconColor_gradient_setsGradientAndClearsSolidColor() {
+    func test_inputOutlineGradient_startEndAndAngleKeys_buildOneGradient() {
         // Given
         var theme = ConciergeTheme()
-        let cssKey = "input-mic-icon-color"
-        let cssValue = "linear-gradient(90deg, #12B0A0 0%, #6DD3C4 100%)"
 
         // When
-        CSSKeyMapper.apply(cssKey: cssKey, cssValue: cssValue, to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-outline-gradient-start-color", cssValue: "#12B0A0", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-outline-gradient-end-color", cssValue: "#6DD3C4", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-outline-gradient-angle", cssValue: "90deg", to: &theme)
 
         // Then
-        XCTAssertNil(theme.colors.input.micIconColor)
-        XCTAssertEqual(theme.colors.input.micIconGradient?.angle, 90)
-        XCTAssertEqual(theme.colors.input.micIconGradient?.stops.count, 2)
+        XCTAssertEqual(theme.colors.input.outlineGradient?.startColor.color.toHexString(), "#12B0A0")
+        XCTAssertEqual(theme.colors.input.outlineGradient?.endColor.color.toHexString(), "#6DD3C4")
+        XCTAssertEqual(theme.colors.input.outlineGradient?.angle, 90)
     }
 
-    func test_inputSendArrowBackgroundColor_gradient_setsGradientAndClearsSolidColor() {
+    func test_inputOutlineGradient_angleOmitted_defaultsTo180() {
         // Given
         var theme = ConciergeTheme()
-        let cssKey = "input-send-arrow-background-color"
-        let cssValue = "linear-gradient(90deg, #12B0A0 0%, #6DD3C4 100%)"
 
         // When
-        CSSKeyMapper.apply(cssKey: cssKey, cssValue: cssValue, to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-outline-gradient-start-color", cssValue: "#12B0A0", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-outline-gradient-end-color", cssValue: "#6DD3C4", to: &theme)
 
         // Then
-        XCTAssertNil(theme.colors.input.sendArrowBackgroundColor)
-        XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.angle, 90)
-        XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.stops.count, 2)
+        XCTAssertEqual(theme.colors.input.outlineGradient?.angle, 180)
+    }
+
+    func test_inputMicIconGradient_startEndKeys_buildOneGradient() {
+        // Given
+        var theme = ConciergeTheme()
+
+        // When
+        CSSKeyMapper.apply(cssKey: "input-mic-icon-gradient-start-color", cssValue: "#12B0A0", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-mic-icon-gradient-end-color", cssValue: "#6DD3C4", to: &theme)
+
+        // Then
+        XCTAssertEqual(theme.colors.input.micIconGradient?.startColor.color.toHexString(), "#12B0A0")
+        XCTAssertEqual(theme.colors.input.micIconGradient?.endColor.color.toHexString(), "#6DD3C4")
+    }
+
+    func test_inputSendArrowBackgroundGradient_startEndKeys_buildOneGradient() {
+        // Given
+        var theme = ConciergeTheme()
+
+        // When
+        CSSKeyMapper.apply(cssKey: "input-send-arrow-background-gradient-start-color", cssValue: "#12B0A0", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-send-arrow-background-gradient-end-color", cssValue: "#6DD3C4", to: &theme)
+
+        // Then
+        XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.startColor.color.toHexString(), "#12B0A0")
+        XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.endColor.color.toHexString(), "#6DD3C4")
     }
 
     // MARK: - Product Card Color Mapping Tests

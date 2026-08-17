@@ -385,21 +385,6 @@ final class ThemeCSSConverterTests: XCTestCase {
         XCTAssertEqual(color.color.toHexString(), expectedHex)
     }
 
-    // MARK: - parseGradientStopPercentage Tests
-
-    func test_parseGradientStopPercentage_zero_returnsZero() {
-        XCTAssertEqual(CSSValueConverter.parseGradientStopPercentage("0%"), 0)
-    }
-
-    func test_parseGradientStopPercentage_oneHundred_returnsOne() {
-        // Unlike parsePercentage, 100% is a valid, normal stop location (not "no constraint").
-        XCTAssertEqual(CSSValueConverter.parseGradientStopPercentage("100%"), 1)
-    }
-
-    func test_parseGradientStopPercentage_missingPercentSign_returnsNil() {
-        XCTAssertNil(CSSValueConverter.parseGradientStopPercentage("50"))
-    }
-
     // MARK: - parseGradientAngle Tests
 
     func test_parseGradientAngle_degreesValue_returnsDegrees() {
@@ -420,82 +405,6 @@ final class ThemeCSSConverterTests: XCTestCase {
 
     func test_parseGradientAngle_unrecognized_defaultsTo180() {
         XCTAssertEqual(CSSValueConverter.parseGradientAngle("sideways"), 180)
-    }
-
-    // MARK: - parseGradient Tests
-
-    func test_parseGradient_withAngleAndExplicitStops_parsesCorrectly() {
-        // Given
-        let cssValue = "linear-gradient(90deg, #12B0A0 0%, #6DD3C4 100%)"
-
-        // When
-        let gradient = CSSValueConverter.parseGradient(cssValue)
-
-        // Then
-        XCTAssertEqual(gradient?.angle, 90)
-        XCTAssertEqual(gradient?.stops.count, 2)
-        XCTAssertEqual(gradient?.stops.first?.color.color.toHexString(), "#12B0A0")
-        XCTAssertEqual(gradient?.stops.first?.location, 0)
-        XCTAssertEqual(gradient?.stops.last?.color.color.toHexString(), "#6DD3C4")
-        XCTAssertEqual(gradient?.stops.last?.location, 1)
-    }
-
-    func test_parseGradient_directionKeyword_parsesAngle() {
-        // Given
-        let cssValue = "linear-gradient(to right, #000000, #ffffff)"
-
-        // When
-        let gradient = CSSValueConverter.parseGradient(cssValue)
-
-        // Then
-        XCTAssertEqual(gradient?.angle, 90)
-    }
-
-    func test_parseGradient_stopsWithoutPercentages_evenlySpaced() {
-        // Given
-        let cssValue = "linear-gradient(#000000, #ff0000, #ffffff)"
-
-        // When
-        let gradient = CSSValueConverter.parseGradient(cssValue)
-
-        // Then
-        XCTAssertEqual(gradient?.stops.map { $0.location }, [0, 0.5, 1])
-    }
-
-    func test_parseGradient_noLeadingDirection_defaultsAngleTo180() {
-        // Given
-        let cssValue = "linear-gradient(#000000, #ffffff)"
-
-        // When
-        let gradient = CSSValueConverter.parseGradient(cssValue)
-
-        // Then
-        XCTAssertEqual(gradient?.angle, 180)
-    }
-
-    func test_parseGradient_notAGradientString_returnsNil() {
-        XCTAssertNil(CSSValueConverter.parseGradient("#007BFF"))
-    }
-
-    // MARK: - parseColorOrGradient Tests
-
-    func test_parseColorOrGradient_solidColor_returnsColorOnly() {
-        // When
-        let parsed = CSSValueConverter.parseColorOrGradient("#4B75FF")
-
-        // Then
-        XCTAssertEqual(parsed.color?.color.toHexString(), "#4B75FF")
-        XCTAssertNil(parsed.gradient)
-    }
-
-    func test_parseColorOrGradient_gradientString_returnsGradientOnly() {
-        // When
-        let parsed = CSSValueConverter.parseColorOrGradient("linear-gradient(90deg, #000000 0%, #ffffff 100%)")
-
-        // Then
-        XCTAssertNil(parsed.color)
-        XCTAssertNotNil(parsed.gradient)
-        XCTAssertEqual(parsed.gradient?.stops.count, 2)
     }
 
     // MARK: - parseFontWeight Tests
