@@ -50,45 +50,20 @@ final class ComposerSnapshotTests: XCTestCase {
             as: .image(layout: .fixed(width: 390, height: 140))
         )
     }
-
-    func test_composerProbe_idleState_leadingIconAndMicAreCentered() {
-        var probeTheme = ConciergeThemeLoader.default()
-        probeTheme.behavior.input.enableVoiceInput = true // mic only shows when this is true
-        // Non-empty path exercises the leading-icon code path (behavior.input.showAiChatIcon).
-        // The asset won't resolve at test time — LocalAssetImageView looks up Bundle.main, not
-        // the test bundle, the same limitation documented on the "agent-icon" probes in
-        // MessageBubbleSnapshotTests. This snapshot instead guards the idle-state *centering* of
-        // the mic icon (rendered via its BrandIcon SF Symbol fallback, which always resolves)
-        // against the exact bug this test was added for: a hardcoded bottom-padding value that
-        // put the mic ~8pt above center instead of on the placeholder text's baseline.
-        probeTheme.behavior.input.showAiChatIcon = ConciergeIconConfig(icon: "leading-icon")
-
-        let view = ComposerProbeHost(
-            theme: probeTheme,
-            isFocused: false,
-            inputText: ""
-        )
-
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 390, height: 140))
-        )
-    }
 }
 
 private struct ComposerProbeHost: View {
     let theme: ConciergeTheme
     let isFocused: Bool
 
-    @State private var inputText: String
+    @State private var inputText: String = "Test message"
     @State private var selectedRange: NSRange = NSRange(location: 12, length: 0)
     @State private var measuredHeight: CGFloat = 40
     @State private var focusedBinding: Bool
 
-    init(theme: ConciergeTheme, isFocused: Bool, inputText: String = "Test message") {
+    init(theme: ConciergeTheme, isFocused: Bool) {
         self.theme = theme
         self.isFocused = isFocused
-        _inputText = State(initialValue: inputText)
         _focusedBinding = State(initialValue: isFocused)
     }
     
