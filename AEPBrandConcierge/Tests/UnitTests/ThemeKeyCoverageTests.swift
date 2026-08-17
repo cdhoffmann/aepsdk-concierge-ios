@@ -305,8 +305,9 @@ private extension ThemeKeyCoverageTests {
         "input-mic-icon-gradient-end-color": "colors.input.micIconGradient",
         "input-mic-icon-gradient-angle": "colors.input.micIconGradient",
         "input-mic-recording-icon-color": "colors.input.micRecordingIconColor",
-        "input-mic-waveform-gradient-start-color": "colors.input.micWaveformGradientStart",
-        "input-mic-waveform-gradient-end-color": "colors.input.micWaveformGradientEnd",
+        "input-mic-waveform-gradient-start-color": "colors.input.micWaveformGradient",
+        "input-mic-waveform-gradient-end-color": "colors.input.micWaveformGradient",
+        "input-mic-waveform-gradient-angle": "colors.input.micWaveformGradient",
 
         // Colors - Welcome Prompts
         "welcome-prompt-background-color": "colors.welcomePrompt.backgroundColor",

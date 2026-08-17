@@ -256,8 +256,15 @@ public enum CSSKeyMapper {
             theme.colors.input.micIconGradient = CSSKeyMapper.withGradientAngle(theme.colors.input.micIconGradient, cssValue)
         },
         "input-mic-recording-icon-color": { cssValue, theme in theme.colors.input.micRecordingIconColor = CSSValueConverter.parseColor(cssValue) },
-        "input-mic-waveform-gradient-start-color": { cssValue, theme in theme.colors.input.micWaveformGradientStart = CSSValueConverter.parseColor(cssValue) },
-        "input-mic-waveform-gradient-end-color": { cssValue, theme in theme.colors.input.micWaveformGradientEnd = CSSValueConverter.parseColor(cssValue) },
+        "input-mic-waveform-gradient-start-color": { cssValue, theme in
+            theme.colors.input.micWaveformGradient = CSSKeyMapper.withGradientStart(theme.colors.input.micWaveformGradient, cssValue)
+        },
+        "input-mic-waveform-gradient-end-color": { cssValue, theme in
+            theme.colors.input.micWaveformGradient = CSSKeyMapper.withGradientEnd(theme.colors.input.micWaveformGradient, cssValue)
+        },
+        "input-mic-waveform-gradient-angle": { cssValue, theme in
+            theme.colors.input.micWaveformGradient = CSSKeyMapper.withGradientAngle(theme.colors.input.micWaveformGradient, cssValue)
+        },
 
         // Colors - Welcome Prompts
         "welcome-prompt-background-color": { cssValue, theme in theme.colors.welcomePrompt.backgroundColor = CSSValueConverter.parseColor(cssValue) },

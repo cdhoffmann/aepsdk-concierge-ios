@@ -109,9 +109,8 @@ public struct ConciergeShadow: Codable, Equatable {
 }
 
 /// Simple two-color linear gradient for theme tokens that support either a solid color or a gradient
-/// (ex: input bar border, mic/send icon colors). Matches the two-color pattern already used for the
-/// mic waveform gradient (`micWaveformGradientStart`/`End`) -- pick a start and end color, with angle
-/// as an optional configuration knob on top rather than an arbitrary multi-stop system.
+/// (ex: input bar border, mic/send icon colors, mic waveform gradient) -- pick a start and end color,
+/// with angle as an optional configuration knob on top rather than an arbitrary multi-stop system.
 public struct ConciergeGradient: Codable, Equatable {
     public var startColor: CodableColor
     public var endColor: CodableColor
