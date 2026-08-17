@@ -209,7 +209,7 @@ Feature toggles and interaction configuration.
 |----------|------|---------|-------------|
 | `behavior.input.enableVoiceInput` | boolean | `false` | Enable voice input button |
 | `behavior.input.disableMultiline` | boolean | `true` | Disable multiline text input |
-| `behavior.input.showAiChatIcon` | object | `null` | AI chat icon configuration. Object with an `icon` property (SVG string or URL). |
+| `behavior.input.showAiChatIcon` | object | `null` | Leading icon shown before the text field in the input bar. Object with an `icon` property: a local asset name or a remote `http(s)` URL — same resolution rules as `assets.icons.company` (see [Bundling local icons](#bundling-local-icons)). `null` or an empty `icon` hides it. Tooltip/accessibility label is set via `text["input.aiChatIcon.tooltip"]`. |
 | `behavior.input.sendButtonStyle` | string | `"default"` | Send button style. `"default"` shows a paper airplane icon. `"arrow"` shows a filled circle with an upward arrow. |
 | `behavior.input.silenceThreshold` | number | `0.02` | Voice capture: RMS level (raw, before UI normalization) above which input counts as speech. Lower values detect quieter speech but may increase false “speech” detection. |
 | `behavior.input.silenceDuration` | number | `2` | Voice capture: seconds of silence after speech is detected before recording stops automatically. |
@@ -1101,7 +1101,7 @@ This section documents which properties are fully implemented, partially impleme
 | `behavior.productCard.cardsAlignment` | ✅ | Horizontal alignment of single product card within its container (start/center/end) |
 | `behavior.input.enableVoiceInput` | ✅ | Controls mic button visibility |
 | `behavior.input.disableMultiline` | ✅ | Controls input line limit |
-| `behavior.input.showAiChatIcon` | ⚠️ | Parsed and mapped to component but not rendered |
+| `behavior.input.showAiChatIcon` | ✅ | Rendered as a leading icon before the text field in ComposerEditingView |
 | `behavior.input.sendButtonStyle` | ✅ | Controls send button style (default vs arrow) in ComposerEditingView |
 | `behavior.input.silenceThreshold` | ✅ | Voice capture: RMS threshold for speech vs silence in SpeechCapturer |
 | `behavior.input.silenceDuration` | ✅ | Voice capture: auto-stop delay after silence in SpeechCapturer |
@@ -1139,7 +1139,7 @@ This section documents which properties are fully implemented, partially impleme
 | `text["input.placeholder"]` | ✅ | Used in ComposerEditingView |
 | `text["input.messageInput.aria"]` | ✅ | Used for accessibility |
 | `text["input.send.aria"]` | ✅ | Used for accessibility |
-| `text["input.aiChatIcon.tooltip"]` | ⚠️ | Parsed but AI icon not rendered |
+| `text["input.aiChatIcon.tooltip"]` | ✅ | Used as the accessibility label for the leading input icon in ComposerEditingView |
 | `text["input.mic.aria"]` | ✅ | Used for accessibility |
 | `text["card.aria.select"]` | ✅ | Used in ChatMessageView |
 | `text["carousel.prev.aria"]` | ✅ | Used in CarouselGroupView |

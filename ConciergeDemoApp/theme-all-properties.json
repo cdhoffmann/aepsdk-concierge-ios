@@ -28,7 +28,9 @@
     "input": {
       "enableVoiceInput": true,
       "disableMultiline": false,
-      "showAiChatIcon": null,
+      "showAiChatIcon": {
+        "icon": "InputLeadingIcon"
+      },
       "sendButtonStyle": "arrow",
       "silenceDuration": 4,
       "silenceThreshold": 0.02
