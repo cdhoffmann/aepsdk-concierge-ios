@@ -108,6 +108,62 @@ public struct ConciergeShadow: Codable, Equatable {
     }
 }
 
+/// A single color stop within a `ConciergeGradient`.
+public struct ConciergeGradientStop: Codable, Equatable {
+    public var color: CodableColor
+    public var location: CGFloat // 0...1
+
+    public init(color: CodableColor, location: CGFloat) {
+        self.color = color
+        self.location = location
+    }
+}
+
+/// Linear gradient configuration for theme tokens that support either a solid color or a gradient
+/// (ex: input bar border, mic/send icon colors). Customer-defined stops and angle -- no fixed palette.
+public struct ConciergeGradient: Codable, Equatable {
+    public var stops: [ConciergeGradientStop]
+    /// Degrees, CSS `linear-gradient` convention: 0 = "to top", increases clockwise. Default 180 = "to bottom".
+    public var angle: CGFloat
+
+    public init(stops: [ConciergeGradientStop], angle: CGFloat = 180) {
+        self.stops = stops
+        self.angle = angle
+    }
+
+    /// Convenience initializer mirroring CSS's implicit even-spacing when stop locations are omitted.
+    public init(colors: [CodableColor], angle: CGFloat = 180) {
+        let count = colors.count
+        self.stops = colors.enumerated().map { index, color in
+            ConciergeGradientStop(color: color, location: count > 1 ? CGFloat(index) / CGFloat(count - 1) : 0)
+        }
+        self.angle = angle
+    }
+
+    /// Converts the CSS-style angle + stops into a SwiftUI `LinearGradient`.
+    /// Exact for the 4 axis-aligned angles (0/90/180/270 = to-top/right/bottom/left). Approximate at other
+    /// angles: does not correct for non-square view aspect ratio or CSS's corner-reaching line-length scaling.
+    public var linearGradient: LinearGradient {
+        let radians = angle * .pi / 180
+        let dx = sin(radians) * 0.5
+        let dy = -cos(radians) * 0.5
+        return LinearGradient(
+            gradient: Gradient(stops: stops.map { .init(color: $0.color.color, location: $0.location) }),
+            startPoint: UnitPoint(x: 0.5 - dx, y: 0.5 - dy),
+            endPoint: UnitPoint(x: 0.5 + dx, y: 0.5 + dy)
+        )
+    }
+}
+
+/// Resolves a themed color/gradient pair into a single `ShapeStyle`, preferring the gradient when present.
+/// Used by views that render either a solid color or a gradient through the same `.foregroundStyle`/`.stroke` call.
+func conciergeShapeStyle(color: CodableColor?, gradient: ConciergeGradient?, fallback: Color) -> AnyShapeStyle {
+    if let gradient {
+        return AnyShapeStyle(gradient.linearGradient)
+    }
+    return AnyShapeStyle(color?.color ?? fallback)
+}
+
 /// Text alignment configuration
 /// Matches SwiftUI's TextAlignment cases: .leading, .center, .trailing
 public enum ConciergeTextAlignment: String, Codable {

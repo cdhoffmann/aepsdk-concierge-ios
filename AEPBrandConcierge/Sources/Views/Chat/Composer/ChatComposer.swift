@@ -72,7 +72,7 @@ struct ChatComposer: View {
                     ZStack {
                         // Base border
                         RoundedRectangle(cornerRadius: theme.layout.inputBorderRadius)
-                            .stroke(theme.components.inputBar.border.color.color, lineWidth: theme.components.inputBar.border.width)
+                            .stroke(borderStyle, lineWidth: theme.components.inputBar.border.width)
                         // Focus outline (theme-driven)
                         if isFocused {
                             RoundedRectangle(cornerRadius: theme.layout.inputBorderRadius)
@@ -99,6 +99,14 @@ struct ChatComposer: View {
 }
 
 private extension ChatComposer {
+    var borderStyle: AnyShapeStyle {
+        conciergeShapeStyle(
+            color: theme.components.inputBar.border.color,
+            gradient: theme.components.inputBar.border.gradient,
+            fallback: theme.components.inputBar.border.color.color
+        )
+    }
+
     func startOrStopGlow() {
         if case .recording = inputState {
             // Restart animation from zero every time recording starts

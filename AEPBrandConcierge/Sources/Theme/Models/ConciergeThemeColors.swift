@@ -97,12 +97,15 @@ public struct ConciergeButtonColors: Codable {
 public struct ConciergeInputColors: Codable {
     public var background: CodableColor
     public var text: CodableColor
-    public var outline: CodableColor? // TODO: are gradients required?
+    public var outline: CodableColor?
+    public var outlineGradient: ConciergeGradient?
     public var outlineFocus: CodableColor
     public var sendIconColor: CodableColor?
     public var sendArrowIconColor: CodableColor?
     public var sendArrowBackgroundColor: CodableColor?
+    public var sendArrowBackgroundGradient: ConciergeGradient?
     public var micIconColor: CodableColor?
+    public var micIconGradient: ConciergeGradient?
     public var micRecordingIconColor: CodableColor?
     public var micWaveformGradientStart: CodableColor?
     public var micWaveformGradientEnd: CodableColor?
@@ -118,7 +121,10 @@ public struct ConciergeInputColors: Codable {
         micIconColor: CodableColor? = nil,
         micRecordingIconColor: CodableColor? = nil,
         micWaveformGradientStart: CodableColor? = nil,
-        micWaveformGradientEnd: CodableColor? = nil
+        micWaveformGradientEnd: CodableColor? = nil,
+        outlineGradient: ConciergeGradient? = nil,
+        sendArrowBackgroundGradient: ConciergeGradient? = nil,
+        micIconGradient: ConciergeGradient? = nil
     ) {
         self.background = background
         self.text = text
@@ -131,6 +137,9 @@ public struct ConciergeInputColors: Codable {
         self.micRecordingIconColor = micRecordingIconColor
         self.micWaveformGradientStart = micWaveformGradientStart
         self.micWaveformGradientEnd = micWaveformGradientEnd
+        self.outlineGradient = outlineGradient
+        self.sendArrowBackgroundGradient = sendArrowBackgroundGradient
+        self.micIconGradient = micIconGradient
     }
 }
 

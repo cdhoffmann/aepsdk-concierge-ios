@@ -137,7 +137,11 @@ struct ComposerEditingView: View {
                         }
                     }
                     .font(.system(size: theme.layout.inputButtonHeight, weight: .semibold))
-                    .foregroundColor(theme.colors.input.micIconColor?.color ?? theme.colors.primary.primary.color)
+                    .foregroundStyle(conciergeShapeStyle(
+                        color: theme.colors.input.micIconColor,
+                        gradient: theme.colors.input.micIconGradient,
+                        fallback: theme.colors.primary.primary.color
+                    ))
                     .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                 }
                 .buttonStyle(.plain)
@@ -150,9 +154,13 @@ struct ComposerEditingView: View {
                     Button(action: onSend) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: theme.layout.inputButtonHeight, weight: .semibold))
-                            .foregroundColor(sendEnabled
-                                             ? (theme.colors.input.sendArrowBackgroundColor?.color ?? theme.colors.primary.primary.color)
-                                             : theme.colors.button.submitFillDisabled.color)
+                            .foregroundStyle(sendEnabled
+                                             ? conciergeShapeStyle(
+                                                color: theme.colors.input.sendArrowBackgroundColor,
+                                                gradient: theme.colors.input.sendArrowBackgroundGradient,
+                                                fallback: theme.colors.primary.primary.color
+                                               )
+                                             : AnyShapeStyle(theme.colors.button.submitFillDisabled.color))
                             .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                     }
                     .buttonStyle(.plain)
@@ -182,7 +190,13 @@ struct ComposerEditingView: View {
                 // Mic button when idle with no text
                 Button(action: onMicTap) {
                     BrandIcon(assetName: "S2_Icon_Microphone_20_N", systemName: "mic.fill")
-                        .foregroundColor(micEnabled ? (theme.colors.input.micIconColor?.color ?? theme.colors.primary.primary.color) : Color.secondary.opacity(0.5))
+                        .foregroundStyle(micEnabled
+                                         ? conciergeShapeStyle(
+                                            color: theme.colors.input.micIconColor,
+                                            gradient: theme.colors.input.micIconGradient,
+                                            fallback: theme.colors.primary.primary.color
+                                           )
+                                         : AnyShapeStyle(Color.secondary.opacity(0.5)))
                         .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                 }
                 .buttonStyle(.plain)

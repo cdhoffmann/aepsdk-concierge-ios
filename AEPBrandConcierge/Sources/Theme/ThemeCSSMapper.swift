@@ -65,12 +65,9 @@ public enum CSSKeyMapper {
             theme.colors.input.text = CSSValueConverter.parseColor(cssValue)
         },
         "input-outline-color": { cssValue, theme in
-            // Handle gradients - if starts with "linear-gradient", set to nil
-            if cssValue.hasPrefix("linear-gradient") {
-                theme.colors.input.outline = nil
-            } else {
-                theme.colors.input.outline = CSSValueConverter.parseColor(cssValue)
-            }
+            let parsed = CSSValueConverter.parseColorOrGradient(cssValue)
+            theme.colors.input.outline = parsed.color
+            theme.colors.input.outlineGradient = parsed.gradient
         },
         "input-focus-outline-color": { cssValue, theme in theme.colors.input.outlineFocus = CSSValueConverter.parseColor(cssValue) },
 
@@ -227,8 +224,16 @@ public enum CSSKeyMapper {
         // Colors - Input Icons
         "input-send-icon-color": { cssValue, theme in theme.colors.input.sendIconColor = CSSValueConverter.parseColor(cssValue) },
         "input-send-arrow-icon-color": { cssValue, theme in theme.colors.input.sendArrowIconColor = CSSValueConverter.parseColor(cssValue) },
-        "input-send-arrow-background-color": { cssValue, theme in theme.colors.input.sendArrowBackgroundColor = CSSValueConverter.parseColor(cssValue) },
-        "input-mic-icon-color": { cssValue, theme in theme.colors.input.micIconColor = CSSValueConverter.parseColor(cssValue) },
+        "input-send-arrow-background-color": { cssValue, theme in
+            let parsed = CSSValueConverter.parseColorOrGradient(cssValue)
+            theme.colors.input.sendArrowBackgroundColor = parsed.color
+            theme.colors.input.sendArrowBackgroundGradient = parsed.gradient
+        },
+        "input-mic-icon-color": { cssValue, theme in
+            let parsed = CSSValueConverter.parseColorOrGradient(cssValue)
+            theme.colors.input.micIconColor = parsed.color
+            theme.colors.input.micIconGradient = parsed.gradient
+        },
         "input-mic-recording-icon-color": { cssValue, theme in theme.colors.input.micRecordingIconColor = CSSValueConverter.parseColor(cssValue) },
         "input-mic-waveform-gradient-start-color": { cssValue, theme in theme.colors.input.micWaveformGradientStart = CSSValueConverter.parseColor(cssValue) },
         "input-mic-waveform-gradient-end-color": { cssValue, theme in theme.colors.input.micWaveformGradientEnd = CSSValueConverter.parseColor(cssValue) },

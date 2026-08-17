@@ -410,6 +410,15 @@ private extension ThemeKeyCoverageTests {
         // Input icon colors are optional (nil by default), covered by CSS mappings.
         // These are reported as leaf optionals that don't have values at init.
 
+        // Gradient variants share a single CSS key with their solid-color sibling (ex: "input-outline-color"
+        // sets `outline` for a solid hex value or `outlineGradient` for a "linear-gradient(...)" value), so
+        // they can't be expressed 1:1 in supportedCSSKeyToThemePropertyPath alongside their sibling.
+        if path == "colors.input.outlineGradient"
+            || path == "colors.input.micIconGradient"
+            || path == "colors.input.sendArrowBackgroundGradient" {
+            return true
+        }
+
         // Welcome screen layout tokens are optional (nil by default).
         // They are covered by CSS key mappings but default to nil.
 

@@ -140,6 +140,82 @@ public enum CSSValueConverter {
         return CodableColor(Color.fromHexString(cssValue))
     }
 
+    /// Parses a gradient stop percentage (ex: "0%", "100%") to a 0...1 CGFloat.
+    /// Unlike `parsePercentage`, 100% is a normal, valid stop location (not "no constraint").
+    public static func parseGradientStopPercentage(_ cssValue: String) -> CGFloat? {
+        let trimmed = cssValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasSuffix("%") else { return nil }
+        guard let value = Double(trimmed.dropLast()) else { return nil }
+        return CGFloat(value / 100.0)
+    }
+
+    /// Parses a CSS gradient direction token to a CSS-convention angle in degrees (0 = "to top", clockwise).
+    /// Supports "<n>deg" and the "to <keyword>" direction keywords. Defaults to 180 ("to bottom").
+    public static func parseGradientAngle(_ cssValue: String) -> CGFloat {
+        let trimmed = cssValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch trimmed {
+        case "to top": return 0
+        case "to right": return 90
+        case "to bottom": return 180
+        case "to left": return 270
+        case "to top right", "to right top": return 45
+        case "to bottom right", "to right bottom": return 135
+        case "to bottom left", "to left bottom": return 225
+        case "to top left", "to left top": return 315
+        default:
+            if trimmed.hasSuffix("deg"), let value = Double(trimmed.dropLast(3)) {
+                return CGFloat(value)
+            }
+            return 180
+        }
+    }
+
+    /// Parses a CSS `linear-gradient(...)` string into a `ConciergeGradient`.
+    /// Supports an optional leading angle/direction ("<n>deg" or "to <keyword>"), followed by
+    /// comma-separated color stops ("#RRGGBB" optionally followed by a percentage). Splitting on
+    /// top-level commas is safe here since only hex colors are supported (no nested-paren color functions).
+    public static func parseGradient(_ cssValue: String) -> ConciergeGradient? {
+        let trimmed = cssValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("linear-gradient("), trimmed.hasSuffix(")") else { return nil }
+
+        let inner = String(trimmed.dropFirst("linear-gradient(".count).dropLast())
+        let parts = inner.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard !parts.isEmpty else { return nil }
+
+        var angle: CGFloat = 180
+        var colorParts = parts
+        if let first = parts.first, first.hasSuffix("deg") || first.hasPrefix("to ") {
+            angle = parseGradientAngle(first)
+            colorParts = Array(parts.dropFirst())
+        }
+
+        let stops: [ConciergeGradientStop] = colorParts.enumerated().map { index, part in
+            let pieces = part.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            let color = parseColor(pieces.first ?? "#000000")
+            let location = pieces.count > 1
+                ? (parseGradientStopPercentage(pieces[1]) ?? evenGradientSpacing(index, colorParts.count))
+                : evenGradientSpacing(index, colorParts.count)
+            return ConciergeGradientStop(color: color, location: location)
+        }
+        guard !stops.isEmpty else { return nil }
+
+        return ConciergeGradient(stops: stops, angle: angle)
+    }
+
+    /// Parses a CSS color string that may be a solid color or a `linear-gradient(...)`.
+    /// Returns exactly one of the two -- the other is `nil`.
+    public static func parseColorOrGradient(_ cssValue: String) -> (color: CodableColor?, gradient: ConciergeGradient?) {
+        let trimmed = cssValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("linear-gradient") {
+            return (nil, parseGradient(trimmed))
+        }
+        return (parseColor(trimmed), nil)
+    }
+
+    private static func evenGradientSpacing(_ index: Int, _ count: Int) -> CGFloat {
+        count > 1 ? CGFloat(index) / CGFloat(count - 1) : 0
+    }
+
     /// Parses CSS font-weight string to CodableFontWeight enum
     /// Supports: "400", "700", "normal", "bold"
     public static func parseFontWeight(_ cssValue: String) -> CodableFontWeight {
