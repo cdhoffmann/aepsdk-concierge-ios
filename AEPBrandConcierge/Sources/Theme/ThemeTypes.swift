@@ -124,17 +124,28 @@ public struct ConciergeGradient: Codable, Equatable {
         self.angle = angle
     }
 
-    /// Converts the CSS-style angle + two colors into a SwiftUI `LinearGradient`.
+    /// The gradient line's start/end points in unit space, derived from `angle`. Split out from
+    /// `linearGradient` so the angle math is directly unit-testable (SwiftUI's `LinearGradient` itself
+    /// exposes no way to read back its start/end points).
     /// Exact for the 4 axis-aligned angles (0/90/180/270 = to-top/right/bottom/left). Approximate at other
     /// angles: does not correct for non-square view aspect ratio or CSS's corner-reaching line-length scaling.
-    public var linearGradient: LinearGradient {
+    var unitPoints: (start: UnitPoint, end: UnitPoint) {
         let radians = angle * .pi / 180
         let dx = sin(radians) * 0.5
         let dy = -cos(radians) * 0.5
+        return (
+            UnitPoint(x: 0.5 - dx, y: 0.5 - dy),
+            UnitPoint(x: 0.5 + dx, y: 0.5 + dy)
+        )
+    }
+
+    /// Converts the CSS-style angle + two colors into a SwiftUI `LinearGradient`.
+    public var linearGradient: LinearGradient {
+        let points = unitPoints
         return LinearGradient(
             gradient: Gradient(colors: [startColor.color, endColor.color]),
-            startPoint: UnitPoint(x: 0.5 - dx, y: 0.5 - dy),
-            endPoint: UnitPoint(x: 0.5 + dx, y: 0.5 + dy)
+            startPoint: points.start,
+            endPoint: points.end
         )
     }
 }

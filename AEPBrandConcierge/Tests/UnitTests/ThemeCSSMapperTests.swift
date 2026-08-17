@@ -10,6 +10,7 @@
  governing permissions and limitations under the License.
  */
 
+import SwiftUI
 import XCTest
 @testable import AEPBrandConcierge
 
@@ -401,6 +402,57 @@ final class ThemeCSSMapperTests: XCTestCase {
         // Then
         XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.startColor.color.toHexString(), "#12B0A0")
         XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.endColor.color.toHexString(), "#6DD3C4")
+    }
+
+    func test_inputMicIconGradientAngle_setAlone_createsGradientWithClearColors() {
+        // Given
+        var theme = ConciergeTheme()
+
+        // When
+        CSSKeyMapper.apply(cssKey: "input-mic-icon-gradient-angle", cssValue: "45deg", to: &theme)
+
+        // Then
+        XCTAssertEqual(theme.colors.input.micIconGradient?.angle, 45)
+        XCTAssertEqual(theme.colors.input.micIconGradient?.startColor.color.toHexString(), Color.clear.toHexString())
+        XCTAssertEqual(theme.colors.input.micIconGradient?.endColor.color.toHexString(), Color.clear.toHexString())
+    }
+
+    func test_inputSendArrowBackgroundGradientAngle_setAlone_createsGradientWithClearColors() {
+        // Given
+        var theme = ConciergeTheme()
+
+        // When
+        CSSKeyMapper.apply(cssKey: "input-send-arrow-background-gradient-angle", cssValue: "45deg", to: &theme)
+
+        // Then
+        XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.angle, 45)
+    }
+
+    func test_inputMicWaveformGradient_startEndAndAngleKeys_buildOneGradient() {
+        // Given
+        var theme = ConciergeTheme()
+
+        // When
+        CSSKeyMapper.apply(cssKey: "input-mic-waveform-gradient-start-color", cssValue: "#00F5D4", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-mic-waveform-gradient-end-color", cssValue: "#003D33", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-mic-waveform-gradient-angle", cssValue: "to right", to: &theme)
+
+        // Then
+        XCTAssertEqual(theme.colors.input.micWaveformGradient?.startColor.color.toHexString(), "#00F5D4")
+        XCTAssertEqual(theme.colors.input.micWaveformGradient?.endColor.color.toHexString(), "#003D33")
+        XCTAssertEqual(theme.colors.input.micWaveformGradient?.angle, 90)
+    }
+
+    func test_inputMicWaveformGradient_angleOmitted_defaultsTo180() {
+        // Given
+        var theme = ConciergeTheme()
+
+        // When
+        CSSKeyMapper.apply(cssKey: "input-mic-waveform-gradient-start-color", cssValue: "#00F5D4", to: &theme)
+        CSSKeyMapper.apply(cssKey: "input-mic-waveform-gradient-end-color", cssValue: "#003D33", to: &theme)
+
+        // Then
+        XCTAssertEqual(theme.colors.input.micWaveformGradient?.angle, 180)
     }
 
     // MARK: - Product Card Color Mapping Tests
