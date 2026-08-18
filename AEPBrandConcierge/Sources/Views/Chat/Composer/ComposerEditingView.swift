@@ -117,8 +117,7 @@ struct ComposerEditingView: View {
                 AudioWaveformView(
                     audioLevel: audioLevel,
                     barColor: theme.colors.primary.primary.color,
-                    gradientStart: theme.colors.input.micWaveformGradientStart?.color,
-                    gradientEnd: theme.colors.input.micWaveformGradientEnd?.color
+                    gradient: theme.colors.input.micWaveformGradient
                 )
                 .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight)
                 .padding(.bottom, iconBottomPadding)
@@ -137,7 +136,7 @@ struct ComposerEditingView: View {
                         }
                     }
                     .font(.system(size: theme.layout.inputButtonHeight, weight: .semibold))
-                    .foregroundColor(theme.colors.input.micIconColor?.color ?? theme.colors.primary.primary.color)
+                    .foregroundStyle(micIconStyle)
                     .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                 }
                 .buttonStyle(.plain)
@@ -150,9 +149,9 @@ struct ComposerEditingView: View {
                     Button(action: onSend) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: theme.layout.inputButtonHeight, weight: .semibold))
-                            .foregroundColor(sendEnabled
-                                             ? (theme.colors.input.sendArrowBackgroundColor?.color ?? theme.colors.primary.primary.color)
-                                             : theme.colors.button.submitFillDisabled.color)
+                            .foregroundStyle(sendEnabled
+                                             ? sendArrowStyle
+                                             : AnyShapeStyle(theme.colors.button.submitFillDisabled.color))
                             .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                     }
                     .buttonStyle(.plain)
@@ -182,7 +181,9 @@ struct ComposerEditingView: View {
                 // Mic button when idle with no text
                 Button(action: onMicTap) {
                     BrandIcon(assetName: "S2_Icon_Microphone_20_N", systemName: "mic.fill")
-                        .foregroundColor(micEnabled ? (theme.colors.input.micIconColor?.color ?? theme.colors.primary.primary.color) : Color.secondary.opacity(0.5))
+                        .foregroundStyle(micEnabled
+                                         ? micIconStyle
+                                         : AnyShapeStyle(Color.secondary.opacity(0.5)))
                         .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                 }
                 .buttonStyle(.plain)
@@ -199,6 +200,23 @@ struct ComposerEditingView: View {
 }
 
 private extension ComposerEditingView {
+    /// Shared by the idle mic button and the recording/stop button so the two copies can't drift.
+    var micIconStyle: AnyShapeStyle {
+        conciergeShapeStyle(
+            color: theme.colors.input.micIconColor,
+            gradient: theme.colors.input.micIconGradient,
+            fallback: theme.colors.primary.primary.color
+        )
+    }
+
+    var sendArrowStyle: AnyShapeStyle {
+        conciergeShapeStyle(
+            color: theme.colors.input.sendArrowBackgroundColor,
+            gradient: theme.colors.input.sendArrowBackgroundGradient,
+            fallback: theme.colors.primary.primary.color
+        )
+    }
+
     var resolvedInputFont: UIFont {
         let fontSize = theme.layout.inputFontSize
         if theme.typography.fontFamily.isEmpty {

@@ -160,6 +160,9 @@ private extension ThemeKeyCoverageTests {
         "input-background": "colors.input.background",
         "input-text-color": "colors.input.text",
         "input-outline-color": "colors.input.outline",
+        "input-outline-gradient-start-color": "colors.input.outlineGradient",
+        "input-outline-gradient-end-color": "colors.input.outlineGradient",
+        "input-outline-gradient-angle": "colors.input.outlineGradient",
         "input-focus-outline-color": "colors.input.outlineFocus",
 
         // Colors - Feedback
@@ -294,10 +297,17 @@ private extension ThemeKeyCoverageTests {
         "input-send-icon-color": "colors.input.sendIconColor",
         "input-send-arrow-icon-color": "colors.input.sendArrowIconColor",
         "input-send-arrow-background-color": "colors.input.sendArrowBackgroundColor",
+        "input-send-arrow-background-gradient-start-color": "colors.input.sendArrowBackgroundGradient",
+        "input-send-arrow-background-gradient-end-color": "colors.input.sendArrowBackgroundGradient",
+        "input-send-arrow-background-gradient-angle": "colors.input.sendArrowBackgroundGradient",
         "input-mic-icon-color": "colors.input.micIconColor",
+        "input-mic-icon-gradient-start-color": "colors.input.micIconGradient",
+        "input-mic-icon-gradient-end-color": "colors.input.micIconGradient",
+        "input-mic-icon-gradient-angle": "colors.input.micIconGradient",
         "input-mic-recording-icon-color": "colors.input.micRecordingIconColor",
-        "input-mic-waveform-gradient-start-color": "colors.input.micWaveformGradientStart",
-        "input-mic-waveform-gradient-end-color": "colors.input.micWaveformGradientEnd",
+        "input-mic-waveform-gradient-start-color": "colors.input.micWaveformGradient",
+        "input-mic-waveform-gradient-end-color": "colors.input.micWaveformGradient",
+        "input-mic-waveform-gradient-angle": "colors.input.micWaveformGradient",
 
         // Colors - Welcome Prompts
         "welcome-prompt-background-color": "colors.welcomePrompt.backgroundColor",

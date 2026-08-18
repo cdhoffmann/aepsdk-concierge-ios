@@ -140,6 +140,29 @@ Shadows use CSS box-shadow syntax:
 
 Format: `offsetX offsetY blurRadius spreadRadius color`
 
+### Gradients
+
+Some color tokens (input border, mic/send icon tints, mic waveform bars) support a two-color linear
+gradient as an alternative to a solid color. Each gradient-capable token is configured via 3 CSS
+variables sharing a common prefix -- a start color, an end color, and an optional angle:
+
+```json
+"--input-outline-gradient-start-color": "#12B0A0",
+"--input-outline-gradient-end-color": "#6DD3C4",
+"--input-outline-gradient-angle": "90deg"
+```
+
+- Setting either the start or end color creates the gradient (the unset side defaults to clear) --
+  set both for the intended two-color look.
+- The angle accepts a CSS `<n>deg` value or a direction keyword (`to top`, `to right`, `to bottom`,
+  `to left`, `to top right`, `to top left`, `to bottom right`, `to bottom left`) and follows CSS
+  `linear-gradient` convention: `0deg`/`to top` points up, increasing clockwise. Defaults to `180deg`
+  (`to bottom`) when omitted.
+- When a gradient is set, it takes priority over the corresponding solid-color token (ex:
+  `--input-outline-gradient-*` overrides `--input-outline-color`).
+- On iOS, the angle-to-render conversion is exact only for the 4 axis-aligned angles (`0`/`90`/`180`/`270`);
+  other angles are a close visual approximation, not pixel-exact CSS gradient math.
+
 ### Font Weights
 
 Font weights use CSS numeric or named values:
@@ -592,6 +615,9 @@ Visual styling using CSS-like variable names. All properties in the `theme` obje
 | `--input-background` | `colors.input.background` | `Color` | `white` | Input field background |
 | `--input-text-color` | `colors.input.text` | `Color` | `primary` | Input text color |
 | `--input-outline-color` | `colors.input.outline` | `Color?` | `nil` | Input border color |
+| `--input-outline-gradient-start-color` | `colors.input.outlineGradient` | `Color?` | `nil` | Input border gradient start color. See [Gradients](#gradients). Overrides `--input-outline-color` when set. |
+| `--input-outline-gradient-end-color` | `colors.input.outlineGradient` | `Color?` | `nil` | Input border gradient end color. |
+| `--input-outline-gradient-angle` | `colors.input.outlineGradient` | `Degrees` | `180` | Input border gradient direction. |
 | `--input-focus-outline-color` | `colors.input.outlineFocus` | `Color` | `accentColor` | Focused input border color |
 
 ### Colors - Input Icons
@@ -601,10 +627,17 @@ Visual styling using CSS-like variable names. All properties in the `theme` obje
 | `--input-send-icon-color` | `colors.input.sendIconColor` | `Color?` | `nil` | Default send button icon tint |
 | `--input-send-arrow-icon-color` | `colors.input.sendArrowIconColor` | `Color?` | `nil` | Arrow-style send button arrow color |
 | `--input-send-arrow-background-color` | `colors.input.sendArrowBackgroundColor` | `Color?` | `nil` | Arrow-style send button circle background |
+| `--input-send-arrow-background-gradient-start-color` | `colors.input.sendArrowBackgroundGradient` | `Color?` | `nil` | Arrow-style send button circle gradient start color. See [Gradients](#gradients). |
+| `--input-send-arrow-background-gradient-end-color` | `colors.input.sendArrowBackgroundGradient` | `Color?` | `nil` | Arrow-style send button circle gradient end color. |
+| `--input-send-arrow-background-gradient-angle` | `colors.input.sendArrowBackgroundGradient` | `Degrees` | `180` | Arrow-style send button circle gradient direction. |
 | `--input-mic-icon-color` | `colors.input.micIconColor` | `Color?` | `nil` | Mic button icon tint. Falls back to `--color-primary`. |
+| `--input-mic-icon-gradient-start-color` | `colors.input.micIconGradient` | `Color?` | `nil` | Mic button icon gradient start color. See [Gradients](#gradients). |
+| `--input-mic-icon-gradient-end-color` | `colors.input.micIconGradient` | `Color?` | `nil` | Mic button icon gradient end color. |
+| `--input-mic-icon-gradient-angle` | `colors.input.micIconGradient` | `Degrees` | `180` | Mic button icon gradient direction. |
 | `--input-mic-recording-icon-color` | `colors.input.micRecordingIconColor` | `Color?` | `nil` | Stop/recording button icon color. Falls back to white. |
-| `--input-mic-waveform-gradient-start-color` | `colors.input.micWaveformGradientStart` | `Color?` | `nil` | Top color of the listening waveform bars' gradient. Requires the end color to also be set; otherwise falls back to `--color-primary`. |
-| `--input-mic-waveform-gradient-end-color` | `colors.input.micWaveformGradientEnd` | `Color?` | `nil` | Bottom color of the listening waveform bars' gradient. Requires the start color to also be set; otherwise falls back to `--color-primary`. |
+| `--input-mic-waveform-gradient-start-color` | `colors.input.micWaveformGradient` | `Color?` | `nil` | Start color of the listening waveform bars' gradient. Falls back to `--color-primary` solid fill when unset. |
+| `--input-mic-waveform-gradient-end-color` | `colors.input.micWaveformGradient` | `Color?` | `nil` | End color of the listening waveform bars' gradient. |
+| `--input-mic-waveform-gradient-angle` | `colors.input.micWaveformGradient` | `Degrees` | `180` | Waveform bar gradient direction. Defaults to top-to-bottom. |
 
 ### Colors - Welcome Prompts
 
@@ -946,6 +979,9 @@ Visual styling using CSS-like variable names. All properties in the `theme` obje
     "--input-border-radius-mobile": "12px",
     "--input-background": "#FFFFFF",
     "--input-outline-color": null,
+    "--input-outline-gradient-start-color": "",
+    "--input-outline-gradient-end-color": "",
+    "--input-outline-gradient-angle": "",
     "--input-outline-width": "2px",
     "--input-focus-outline-width": "2px",
     "--input-focus-outline-color": "#4B75FF",
@@ -1045,10 +1081,17 @@ Visual styling using CSS-like variable names. All properties in the `theme` obje
     "--input-send-icon-color": "",
     "--input-send-arrow-icon-color": "",
     "--input-send-arrow-background-color": "",
+    "--input-send-arrow-background-gradient-start-color": "",
+    "--input-send-arrow-background-gradient-end-color": "",
+    "--input-send-arrow-background-gradient-angle": "",
     "--input-mic-icon-color": "",
+    "--input-mic-icon-gradient-start-color": "",
+    "--input-mic-icon-gradient-end-color": "",
+    "--input-mic-icon-gradient-angle": "",
     "--input-mic-recording-icon-color": "",
     "--input-mic-waveform-gradient-start-color": "",
     "--input-mic-waveform-gradient-end-color": "",
+    "--input-mic-waveform-gradient-angle": "",
     "--color-container": "#F0F0F0",
     "--suggestion-background-color": "#F0F0F0",
     "--suggestion-text-color": "#131313",
@@ -1213,6 +1256,9 @@ This section documents which properties are fully implemented, partially impleme
 | `--input-background` | ✅ | Used in ChatComposer (via components) |
 | `--input-text-color` | ✅ | Used in ComposerEditingView via components.inputBar.textColor |
 | `--input-outline-color` | ✅ | Used in ChatComposer via components.inputBar.border.color |
+| `--input-outline-gradient-start-color` | ✅ | Used in ChatComposer for the input border gradient, overrides `--input-outline-color` |
+| `--input-outline-gradient-end-color` | ✅ | Used in ChatComposer for the input border gradient |
+| `--input-outline-gradient-angle` | ✅ | Used in ChatComposer for the input border gradient direction |
 | `--input-focus-outline-color` | ✅ | Used in ChatComposer |
 | `--citations-background-color` | ✅ | Used in MarkdownBlockView |
 | `--citations-text-color` | ✅ | Used in MarkdownBlockView |
@@ -1232,10 +1278,17 @@ This section documents which properties are fully implemented, partially impleme
 | `--input-send-icon-color` | ✅ | Used in ComposerSendButtonStyle |
 | `--input-send-arrow-icon-color` | ✅ | Used in ComposerEditingView for arrow-style send button |
 | `--input-send-arrow-background-color` | ✅ | Used in ComposerEditingView for arrow-style send button |
+| `--input-send-arrow-background-gradient-start-color` | ✅ | Used in ComposerEditingView for arrow-style send button gradient |
+| `--input-send-arrow-background-gradient-end-color` | ✅ | Used in ComposerEditingView for arrow-style send button gradient |
+| `--input-send-arrow-background-gradient-angle` | ✅ | Used in ComposerEditingView for arrow-style send button gradient direction |
 | `--input-mic-icon-color` | ✅ | Used in ComposerEditingView |
+| `--input-mic-icon-gradient-start-color` | ✅ | Used in ComposerEditingView for the mic icon gradient |
+| `--input-mic-icon-gradient-end-color` | ✅ | Used in ComposerEditingView for the mic icon gradient |
+| `--input-mic-icon-gradient-angle` | ✅ | Used in ComposerEditingView for the mic icon gradient direction |
 | `--input-mic-recording-icon-color` | ✅ | Used in ComposerEditingView for stop recording button |
 | `--input-mic-waveform-gradient-start-color` | ✅ | Used in AudioWaveformView for the listening waveform bar gradient |
 | `--input-mic-waveform-gradient-end-color` | ✅ | Used in AudioWaveformView for the listening waveform bar gradient |
+| `--input-mic-waveform-gradient-angle` | ✅ | Used in AudioWaveformView for the listening waveform bar gradient direction |
 | `--welcome-prompt-background-color` | ✅ | Used in ChatMessageView for prompt suggestion cards |
 | `--welcome-prompt-text-color` | ✅ | Used in ChatMessageView for prompt suggestion text |
 
