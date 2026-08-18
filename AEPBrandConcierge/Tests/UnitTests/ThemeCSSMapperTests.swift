@@ -351,6 +351,17 @@ final class ThemeCSSMapperTests: XCTestCase {
         XCTAssertNil(theme.colors.input.outlineGradient)
     }
 
+    func test_inputOutlineColor_legacyLinearGradientString_ignoredRatherThanMisparsed() {
+        // Regression test: a legacy "linear-gradient(...)" value must not fall through to
+        // CSSValueConverter.parseColor, which would silently produce Color.fromHexString's
+        // default fallback (systemBackground) instead of leaving the border unset.
+        var theme = ConciergeTheme()
+
+        CSSKeyMapper.apply(cssKey: "input-outline-color", cssValue: "linear-gradient(to right, #000, #fff)", to: &theme)
+
+        XCTAssertNil(theme.colors.input.outline)
+    }
+
     func test_inputOutlineGradient_startEndAndAngleKeys_buildOneGradient() {
         // Given
         var theme = ConciergeTheme()
@@ -376,6 +387,18 @@ final class ThemeCSSMapperTests: XCTestCase {
 
         // Then
         XCTAssertEqual(theme.colors.input.outlineGradient?.angle, 180)
+    }
+
+    func test_inputOutlineGradient_onlyStartColorSet_isNotRenderable() {
+        // Regression test: a theme that only ever sets one side of a gradient key trio (ex: a
+        // customer sets --input-outline-gradient-start-color but never the end color) must not
+        // render as a half-clear gradient -- see ConciergeGradient.isRenderable.
+        var theme = ConciergeTheme()
+
+        CSSKeyMapper.apply(cssKey: "input-outline-gradient-start-color", cssValue: "#12B0A0", to: &theme)
+
+        XCTAssertNotNil(theme.colors.input.outlineGradient)
+        XCTAssertFalse(theme.colors.input.outlineGradient?.isRenderable ?? true)
     }
 
     func test_inputMicIconGradient_startEndKeys_buildOneGradient() {
@@ -426,6 +449,8 @@ final class ThemeCSSMapperTests: XCTestCase {
 
         // Then
         XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.angle, 45)
+        XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.startColor.color.toHexString(), Color.clear.toHexString())
+        XCTAssertEqual(theme.colors.input.sendArrowBackgroundGradient?.endColor.color.toHexString(), Color.clear.toHexString())
     }
 
     func test_inputMicWaveformGradient_startEndAndAngleKeys_buildOneGradient() {

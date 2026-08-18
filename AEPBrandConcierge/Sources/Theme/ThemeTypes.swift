@@ -148,15 +148,50 @@ public struct ConciergeGradient: Codable, Equatable {
             endPoint: points.end
         )
     }
+
+    /// Whether this gradient has real (non-`.clear`) colors on both ends. `CSSKeyMapper` builds a
+    /// gradient incrementally as its 3 CSS keys (start/end/angle) arrive independently, defaulting
+    /// whichever side hasn't been set yet to `.clear` as a placeholder -- so a gradient with only one
+    /// side configured is not yet meant to render. `conciergeShapeStyle` checks this before treating
+    /// the gradient as active, falling back to the solid color/fallback otherwise.
+    var isRenderable: Bool {
+        startColor != CodableColor(.clear) && endColor != CodableColor(.clear)
+    }
 }
 
-/// Resolves a themed color/gradient pair into a single `ShapeStyle`, preferring the gradient when present.
-/// Used by views that render either a solid color or a gradient through the same `.foregroundStyle`/`.stroke` call.
-func conciergeShapeStyle(color: CodableColor?, gradient: ConciergeGradient?, fallback: Color) -> AnyShapeStyle {
-    if let gradient {
-        return AnyShapeStyle(gradient.linearGradient)
+/// Which underlying style `conciergeShapeStyle` picks for a given (color, gradient, fallback) input.
+/// Split out from `conciergeShapeStyle` so the gradient > color > fallback priority is directly
+/// assertable in tests -- SwiftUI's `AnyShapeStyle`/`LinearGradient` expose no way to read back what
+/// they were constructed from, so testing `conciergeShapeStyle`'s return value directly can't catch
+/// e.g. the priority order being accidentally inverted.
+enum ConciergeResolvedStyle: Equatable {
+    case gradient(ConciergeGradient)
+    case color(CodableColor)
+    case fallback
+}
+
+func resolveConciergeStyle(color: CodableColor?, gradient: ConciergeGradient?) -> ConciergeResolvedStyle {
+    if let gradient, gradient.isRenderable {
+        return .gradient(gradient)
     }
-    return AnyShapeStyle(color?.color ?? fallback)
+    if let color {
+        return .color(color)
+    }
+    return .fallback
+}
+
+/// Resolves a themed color/gradient pair into a single `ShapeStyle`, preferring the gradient when
+/// present and renderable (see `ConciergeGradient.isRenderable`). Used by views that render either a
+/// solid color or a gradient through the same `.foregroundStyle`/`.stroke`/`.fill` call.
+func conciergeShapeStyle(color: CodableColor?, gradient: ConciergeGradient?, fallback: Color) -> AnyShapeStyle {
+    switch resolveConciergeStyle(color: color, gradient: gradient) {
+    case .gradient(let gradient):
+        return AnyShapeStyle(gradient.linearGradient)
+    case .color(let color):
+        return AnyShapeStyle(color.color)
+    case .fallback:
+        return AnyShapeStyle(fallback)
+    }
 }
 
 /// Text alignment configuration

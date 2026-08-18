@@ -100,11 +100,13 @@ struct ChatComposer: View {
 
 private extension ChatComposer {
     var borderStyle: AnyShapeStyle {
-        conciergeShapeStyle(
-            color: theme.components.inputBar.border.color,
-            gradient: theme.components.inputBar.border.gradient,
-            fallback: theme.components.inputBar.border.color.color
-        )
+        // border.color is always non-optional, so conciergeShapeStyle's `fallback` branch would be
+        // dead code here -- resolve the gradient/solid choice directly instead.
+        let border = theme.components.inputBar.border
+        if let gradient = border.gradient, gradient.isRenderable {
+            return AnyShapeStyle(gradient.linearGradient)
+        }
+        return AnyShapeStyle(border.color.color)
     }
 
     func startOrStopGlow() {

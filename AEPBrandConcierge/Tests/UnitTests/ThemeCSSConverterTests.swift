@@ -407,6 +407,20 @@ final class ThemeCSSConverterTests: XCTestCase {
         XCTAssertEqual(CSSValueConverter.parseGradientAngle("sideways"), 180)
     }
 
+    func test_parseGradientAngle_nanDeg_defaultsTo180() {
+        // Regression test: Double(_:) follows strtod conventions, so "nandeg" parses "successfully"
+        // to Double.nan -- must not propagate a non-finite value into ConciergeGradient's sin/cos math.
+        XCTAssertEqual(CSSValueConverter.parseGradientAngle("nandeg"), 180)
+    }
+
+    func test_parseGradientAngle_infinityDeg_defaultsTo180() {
+        XCTAssertEqual(CSSValueConverter.parseGradientAngle("infinitydeg"), 180)
+    }
+
+    func test_parseGradientAngle_hugeExponentDeg_defaultsTo180() {
+        XCTAssertEqual(CSSValueConverter.parseGradientAngle("1e400deg"), 180)
+    }
+
     // MARK: - parseFontWeight Tests
     
     func test_parseFontWeight_400_returnsRegular() {
@@ -741,18 +755,63 @@ final class ThemeCSSConverterTests: XCTestCase {
         _ = gradient.linearGradient
     }
 
-    // MARK: - conciergeShapeStyle Tests
+    func test_conciergeGradient_isRenderable_bothColorsReal_isTrue() {
+        let gradient = ConciergeGradient(startColor: CodableColor(.red), endColor: CodableColor(.blue))
+        XCTAssertTrue(gradient.isRenderable)
+    }
 
-    func test_conciergeShapeStyle_gradientSet_returnsGradientStyle() {
+    func test_conciergeGradient_isRenderable_startClear_isFalse() {
+        let gradient = ConciergeGradient(startColor: CodableColor(.clear), endColor: CodableColor(.blue))
+        XCTAssertFalse(gradient.isRenderable)
+    }
+
+    func test_conciergeGradient_isRenderable_endClear_isFalse() {
+        let gradient = ConciergeGradient(startColor: CodableColor(.red), endColor: CodableColor(.clear))
+        XCTAssertFalse(gradient.isRenderable)
+    }
+
+    // MARK: - resolveConciergeStyle / conciergeShapeStyle Tests
+
+    func test_resolveConciergeStyle_renderableGradientSet_prefersGradientOverColor() {
+        // Regression test: conciergeShapeStyle/resolveConciergeStyle must prefer a *renderable*
+        // gradient over a solid color, but never a partially-built (single-side-clear) one.
+        let gradient = ConciergeGradient(startColor: CodableColor(.red), endColor: CodableColor(.blue))
+        let resolved = resolveConciergeStyle(color: CodableColor(.green), gradient: gradient)
+        XCTAssertEqual(resolved, .gradient(gradient))
+    }
+
+    func test_resolveConciergeStyle_gradientNotRenderable_fallsBackToColor() {
+        // Regression test for the "one CSS key set, other defaults to clear" bug: a gradient with
+        // only one real color must NOT render as a (partially invisible) gradient -- it should fall
+        // back to the solid color exactly as if no gradient had been set at all.
+        let partialGradient = ConciergeGradient(startColor: CodableColor(.red), endColor: CodableColor(.clear))
+        let resolved = resolveConciergeStyle(color: CodableColor(.green), gradient: partialGradient)
+        XCTAssertEqual(resolved, .color(CodableColor(.green)))
+    }
+
+    func test_resolveConciergeStyle_gradientNotRenderableAndNoColor_fallsBackToFallback() {
+        let partialGradient = ConciergeGradient(startColor: CodableColor(.red), endColor: CodableColor(.clear))
+        let resolved = resolveConciergeStyle(color: nil, gradient: partialGradient)
+        XCTAssertEqual(resolved, .fallback)
+    }
+
+    func test_resolveConciergeStyle_colorSetNoGradient_choosesColor() {
+        let resolved = resolveConciergeStyle(color: CodableColor(.green), gradient: nil)
+        XCTAssertEqual(resolved, .color(CodableColor(.green)))
+    }
+
+    func test_resolveConciergeStyle_neitherSet_choosesFallback() {
+        let resolved = resolveConciergeStyle(color: nil, gradient: nil)
+        XCTAssertEqual(resolved, .fallback)
+    }
+
+    func test_conciergeShapeStyle_doesNotCrash_forEveryResolutionPath() {
+        // conciergeShapeStyle itself wraps opaque SwiftUI types with no introspection API; the actual
+        // priority logic is asserted above via resolveConciergeStyle. This just exercises the
+        // AnyShapeStyle-wrapping switch end-to-end for each of the 3 paths.
         let gradient = ConciergeGradient(startColor: CodableColor(.red), endColor: CodableColor(.blue))
         _ = conciergeShapeStyle(color: nil, gradient: gradient, fallback: .black)
-    }
-
-    func test_conciergeShapeStyle_colorSetNoGradient_returnsColorStyle() {
         _ = conciergeShapeStyle(color: CodableColor(.green), gradient: nil, fallback: .black)
-    }
-
-    func test_conciergeShapeStyle_neitherSet_returnsFallbackStyle() {
         _ = conciergeShapeStyle(color: nil, gradient: nil, fallback: .black)
     }
 }

@@ -136,11 +136,7 @@ struct ComposerEditingView: View {
                         }
                     }
                     .font(.system(size: theme.layout.inputButtonHeight, weight: .semibold))
-                    .foregroundStyle(conciergeShapeStyle(
-                        color: theme.colors.input.micIconColor,
-                        gradient: theme.colors.input.micIconGradient,
-                        fallback: theme.colors.primary.primary.color
-                    ))
+                    .foregroundStyle(micIconStyle)
                     .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                 }
                 .buttonStyle(.plain)
@@ -154,11 +150,7 @@ struct ComposerEditingView: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: theme.layout.inputButtonHeight, weight: .semibold))
                             .foregroundStyle(sendEnabled
-                                             ? conciergeShapeStyle(
-                                                color: theme.colors.input.sendArrowBackgroundColor,
-                                                gradient: theme.colors.input.sendArrowBackgroundGradient,
-                                                fallback: theme.colors.primary.primary.color
-                                               )
+                                             ? sendArrowStyle
                                              : AnyShapeStyle(theme.colors.button.submitFillDisabled.color))
                             .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                     }
@@ -190,11 +182,7 @@ struct ComposerEditingView: View {
                 Button(action: onMicTap) {
                     BrandIcon(assetName: "S2_Icon_Microphone_20_N", systemName: "mic.fill")
                         .foregroundStyle(micEnabled
-                                         ? conciergeShapeStyle(
-                                            color: theme.colors.input.micIconColor,
-                                            gradient: theme.colors.input.micIconGradient,
-                                            fallback: theme.colors.primary.primary.color
-                                           )
+                                         ? micIconStyle
                                          : AnyShapeStyle(Color.secondary.opacity(0.5)))
                         .frame(width: theme.layout.inputButtonWidth, height: theme.layout.inputButtonHeight, alignment: .center)
                 }
@@ -212,6 +200,23 @@ struct ComposerEditingView: View {
 }
 
 private extension ComposerEditingView {
+    /// Shared by the idle mic button and the recording/stop button so the two copies can't drift.
+    var micIconStyle: AnyShapeStyle {
+        conciergeShapeStyle(
+            color: theme.colors.input.micIconColor,
+            gradient: theme.colors.input.micIconGradient,
+            fallback: theme.colors.primary.primary.color
+        )
+    }
+
+    var sendArrowStyle: AnyShapeStyle {
+        conciergeShapeStyle(
+            color: theme.colors.input.sendArrowBackgroundColor,
+            gradient: theme.colors.input.sendArrowBackgroundGradient,
+            fallback: theme.colors.primary.primary.color
+        )
+    }
+
     var resolvedInputFont: UIFont {
         let fontSize = theme.layout.inputFontSize
         if theme.typography.fontFamily.isEmpty {

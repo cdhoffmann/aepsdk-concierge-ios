@@ -155,7 +155,10 @@ public enum CSSValueConverter {
         case "to bottom left", "to left bottom": return 225
         case "to top left", "to left top": return 315
         default:
-            if trimmed.hasSuffix("deg"), let value = Double(trimmed.dropLast(3)) {
+            // Double(_:) follows strtod conventions, so "nan"/"infinity"/huge-exponent strings parse
+            // "successfully" to non-finite values -- guard explicitly rather than let NaN/Infinity
+            // propagate into ConciergeGradient's sin/cos math.
+            if trimmed.hasSuffix("deg"), let value = Double(trimmed.dropLast(3)), value.isFinite {
                 return CGFloat(value)
             }
             return 180

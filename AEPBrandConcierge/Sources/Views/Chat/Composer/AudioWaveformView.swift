@@ -33,13 +33,14 @@ struct AudioWaveformView: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
+            let fill = barFill
             HStack(spacing: 3) {
                 ForEach(0..<barCount, id: \.self) { index in
                     let phase = sin(time * 4.0 + Double(index) * 1.2)
                     let levelFactor = pow(Double(max(audioLevel, 0.02)), 0.6)
                     let scale = 0.12 + 0.88 * levelFactor * ((phase + 1.0) / 2.0)
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(barFill)
+                        .fill(fill)
                         .frame(width: 3, height: 20 * scale)
                 }
             }
