@@ -114,7 +114,7 @@ struct BasicMessageView: View {
                 if isUserMessage { Spacer() } else if theme.behavior.chat.messageAlignment == .center { Spacer() }
 
                 if showAgentIcon {
-                    LocalAssetImageView(iconPath: theme.assets.icons.company, size: theme.layout.agentIconSize)
+                    LocalAssetImageView(iconPath: theme.assets.icons.company, width: theme.layout.agentIconSize, height: theme.layout.agentIconSize)
                         .padding(.trailing, theme.layout.agentIconSpacing)
                 }
 
