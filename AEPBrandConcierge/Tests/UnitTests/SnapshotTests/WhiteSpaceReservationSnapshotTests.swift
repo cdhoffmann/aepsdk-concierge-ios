@@ -57,12 +57,8 @@ final class WhiteSpaceReservationSnapshotTests: XCTestCase {
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 390, height: 844)))
     }
 
-    /// A completed response with NO trailing suggestions (e.g. reopening a past conversation whose
-    /// last turn had no suggestions) is still, structurally, "the last message immediately following
-    /// the last user message" — same as the active case. This is a known limitation shared with the
-    /// Android implementation this was ported from: ties the effect to message-list shape rather than
-    /// a live "turn in progress" signal. Recorded here so a future change in this behavior is a
-    /// deliberate, visible decision rather than an accidental regression.
+    /// A completed response with no trailing suggestions is still, structurally, "the last message
+    /// immediately following the last user message" — same shape as the active case.
     @MainActor
     func test_completedConversationWithoutSuggestions_stillFillsRemainingHeight() {
         let view = ChatView(messages: [
@@ -108,16 +104,13 @@ final class WhiteSpaceReservationSnapshotTests: XCTestCase {
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 390, height: 844)))
     }
 
-    /// KNOWN LIMITATION: a genuinely empty response (no text, no elements) drives ChatController
-    /// through its real error-fallback path (`ChatController.swift`, the `accumulatedContent.isEmpty
-    /// && latestElements.isEmpty` branch), which appends a plain `.basic(isUserMessage: false)`
-    /// apology message with nothing after it. That message is structurally identical to an
-    /// in-progress response (last message, directly follows the user's message), so it still fills
-    /// remaining height even though `chatState` is back to `.idle` by the time it renders. Recorded
-    /// here — via the real ChatController path, not a hand-built message array — so this gap is a
-    /// documented, deliberate known issue rather than a silent regression.
+    /// A genuinely empty response (no text, no elements) drives ChatController through its real
+    /// error-fallback path (`ChatController.swift`, the `accumulatedContent.isEmpty &&
+    /// latestElements.isEmpty` branch), which appends a plain `.basic(isUserMessage: false)` apology
+    /// message with nothing after it — structurally identical to an in-progress response (last
+    /// message, directly follows the user's message).
     @MainActor
-    func test_emptyResponseFallback_stillFillsRemainingHeight_knownLimitation() async {
+    func test_emptyResponseFallback_stillFillsRemainingHeight() async {
         let mockService = MockChatService(configuration: ConciergeConfiguration())
         mockService.plannedChunks = []
         mockService.plannedError = nil
