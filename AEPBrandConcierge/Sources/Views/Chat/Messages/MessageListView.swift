@@ -25,6 +25,11 @@ struct MessageListView: View {
     var userScrollTick: Int = 0
     var userMessageToScrollId: UUID?
     var scrollToLastOnAppear: Bool = false
+    /// Gates `shouldFillRemainingHeight` so only a turn that's actually in flight fills the screen —
+    /// message-list shape alone can't distinguish "just arrived" from "settled a while ago with
+    /// nothing following it" (e.g. a reopened past conversation, or an empty-response fallback
+    /// message), since both look structurally identical.
+    var chatState: ChatState = .idle
     @Binding var isInputFocused: Bool
     let onSpeak: (String) -> Void
     var onSuggestionTap: ((String) -> Void)?
@@ -171,11 +176,21 @@ struct MessageListView: View {
         return true
     }
 
-    /// True when the message at `index` is the agent's response to the latest user message, and nothing
-    /// has been appended after it yet (no suggestions, cards, or new user message). Matches the Android
-    /// implementation: derived purely from message list shape, not from any separate "turn in progress" state.
-    private func shouldFillRemainingHeight(at index: Int) -> Bool {
-        guard index == messages.count - 1,
+    /// True when a turn is actively in flight (`chatState == .processing`) AND the message at `index`
+    /// is the agent's response to the latest user message with nothing appended after it yet (no
+    /// suggestions, cards, or new user message). The message-shape check alone matches the Android
+    /// implementation this was ported from; the `chatState` check is additionally required so a
+    /// settled conversation with the same shape (reopened past conversation, empty-response
+    /// fallback) doesn't also fill. Deliberately `== .processing` rather than `!= .idle`: `.error`
+    /// is also non-idle, and this must not fill an error-state bubble even if a future change to
+    /// the error path leaves one as the last message (today it doesn't, but that's an accident of
+    /// `ChatController`'s error handling, not something this guard should rely on).
+    /// Internal (not private) so `shouldFillRemainingHeight` can be unit tested directly — a
+    /// snapshot alone can't detect an inverted or broken condition here, since `.frame(minHeight:)`
+    /// only affects scrollable content height, which is invisible in a single fixed-frame capture.
+    func shouldFillRemainingHeight(at index: Int) -> Bool {
+        guard chatState == .processing,
+              index == messages.count - 1,
               case .basic(let isUserMessage) = messages[index].template,
               !isUserMessage,
               let lastUserIndex = messages.lastIndex(where: { if case .basic(true) = $0.template { return true }; return false })

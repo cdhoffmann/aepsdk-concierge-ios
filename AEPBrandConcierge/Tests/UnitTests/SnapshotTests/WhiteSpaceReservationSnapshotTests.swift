@@ -18,11 +18,12 @@ import XCTest
 
 /// Regression coverage for `MessageListView.shouldFillRemainingHeight(at:)`.
 ///
-/// The agent's response bubble fills the remaining screen height only while it's the last thing
-/// on screen, immediately following the latest user message. That's what lets it "fill in" below
-/// the user's message while streaming. The moment anything is appended after it — suggestions,
-/// cards, a new user message — this must stop applying, or completed conversations are left with
-/// a permanent empty gap below the last message.
+/// The agent's response bubble fills the remaining screen height only while a turn is actively in
+/// flight (`chatState == .processing`) AND it's the last thing on screen, immediately following the
+/// latest user message. That's what lets it "fill in" below the user's message while streaming.
+/// The moment anything is appended after it — suggestions, cards, a new user message — or the turn
+/// settles back to idle, this must stop applying, or conversations are left with a permanent empty
+/// gap below the last message.
 final class WhiteSpaceReservationSnapshotTests: XCTestCase {
     /// Response already has trailing suggestion chips appended (turn settled): the response bubble
     /// is no longer the last message, so it must NOT fill remaining height, and no empty gap should
@@ -43,24 +44,33 @@ final class WhiteSpaceReservationSnapshotTests: XCTestCase {
     }
 
     /// Response is the last message, immediately following the latest user message, with nothing
-    /// appended after it yet: it must fill remaining height, preserving the live-streaming "fills
-    /// the screen" effect.
+    /// appended after it yet, AND a turn is actively in flight (`chatState == .processing`): it must
+    /// fill remaining height, preserving the live-streaming "fills the screen" effect. Uses a real
+    /// `ChatController` (not the `ChatView(messages:)` convenience init) because that init's internal
+    /// controller defaults to `chatState == .idle`, which would no longer fill given the fix below.
     @MainActor
     func test_activeResponse_fillsRemainingHeight() {
-        let view = ChatView(messages: [
+        let controller = ChatController(configuration: ConciergeConfiguration(), speechCapturer: nil, speaker: nil)
+        controller.messages = [
             Message(template: .basic(isUserMessage: true), messageBody: "What size should I get?"),
             Message(template: .basic(isUserMessage: false), messageBody: "Here are a few")
-        ])
+        ]
+        controller.chatState = .processing
+
+        let view = ChatView(controller: controller)
             .frame(width: 390, height: 844)
             .conciergeTheme(ConciergeThemeLoader.default())
 
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 390, height: 844)))
     }
 
-    /// A completed response with no trailing suggestions is still, structurally, "the last message
-    /// immediately following the last user message" — same shape as the active case.
+    /// A completed response with no trailing suggestions (e.g. reopening a past conversation whose
+    /// last turn had no suggestions) is, structurally, "the last message immediately following the
+    /// last user message" — same shape as the active case above. Without the `chatState` gate this
+    /// used to still fill remaining height even though nothing is in progress; now that `chatState`
+    /// is required to be non-idle, it correctly does not.
     @MainActor
-    func test_completedConversationWithoutSuggestions_stillFillsRemainingHeight() {
+    func test_completedConversationWithoutSuggestions_doesNotFillRemainingHeight() {
         let view = ChatView(messages: [
             Message(template: .basic(isUserMessage: true), messageBody: "What size should I get?"),
             Message(template: .basic(isUserMessage: false), messageBody: "Go with a 10.")
@@ -108,9 +118,11 @@ final class WhiteSpaceReservationSnapshotTests: XCTestCase {
     /// error-fallback path (`ChatController.swift`, the `accumulatedContent.isEmpty &&
     /// latestElements.isEmpty` branch), which appends a plain `.basic(isUserMessage: false)` apology
     /// message with nothing after it — structurally identical to an in-progress response (last
-    /// message, directly follows the user's message).
+    /// message, directly follows the user's message). `clearState()` (which sets `chatState =
+    /// .idle`) runs in the same synchronous block as appending the message, so both land in the
+    /// same SwiftUI render — no flicker, correctly no-fill from the first frame.
     @MainActor
-    func test_emptyResponseFallback_stillFillsRemainingHeight() async {
+    func test_emptyResponseFallback_doesNotFillRemainingHeight() async {
         let mockService = MockChatService(configuration: ConciergeConfiguration())
         mockService.plannedChunks = []
         mockService.plannedError = nil
@@ -136,8 +148,10 @@ final class WhiteSpaceReservationSnapshotTests: XCTestCase {
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 390, height: 844)))
     }
 
-    /// A conversation long enough to exceed one screen renders and scrolls without breaking —
-    /// `shouldFillRemainingHeight` should never apply here since nothing is "in progress."
+    /// A conversation long enough to exceed one screen renders and scrolls without breaking. Ends in
+    /// the same `[user, agentText]` shape as `test_completedConversationWithoutSuggestions_...`
+    /// above, so this only stays gap-free because `chatState == .idle` here too — conversation
+    /// length itself has no bearing on `shouldFillRemainingHeight`, only the tail shape and chatState.
     @MainActor
     func test_longSettledConversation_rendersWithoutBreaking() {
         var messages: [Message] = []
