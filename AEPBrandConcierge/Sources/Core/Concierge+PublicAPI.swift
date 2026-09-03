@@ -27,6 +27,23 @@ public extension Concierge {
         ConciergeEventTracker.enableTracking(enable: enable)
     }
 
+    // MARK: - Authentication
+
+    /// Registers the provider the SDK consults for an auth token before every chat and feedback turn.
+    ///
+    /// The closure is `async`, so it works synchronously (`{ tokenCache.current }`) or asynchronously
+    /// (`{ await tokenCache.freshToken() }`). It's consulted fresh each turn (never cached) and awaited
+    /// off the UI thread. Returning `nil`/blank — or not returning within a few seconds — sends the turn
+    /// without a token; pass `nil` to clear.
+    ///
+    /// - Important: Supply only the opaque, app-minted token your backend expects — never a raw Auth0
+    ///   (or other identity-provider) token. The SDK attaches it verbatim as its own request-body field
+    ///   (never a header, never merged into the identity payload) and never inspects it.
+    /// - Parameter provider: A closure returning the current token, or `nil` to clear the provider.
+    static func setAuthTokenProvider(_ provider: (@Sendable () async -> String?)?) {
+        ConciergeAuthTokenResolver.shared.setProvider(provider)
+    }
+
     // MARK: - SwiftUI Presentation APIs
 
     /// Shows the Concierge chat UI on top of the wrapped SwiftUI view hierarchy.

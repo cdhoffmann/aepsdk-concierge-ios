@@ -14,7 +14,13 @@ import XCTest
 @testable import AEPBrandConcierge
 
 final class ConciergeChatServiceTests: XCTestCase {
-    
+
+    override func tearDown() {
+        // The resolver is a shared singleton; clear it so a provider set in one test never leaks.
+        ConciergeAuthTokenResolver.shared.setProvider(nil)
+        super.tearDown()
+    }
+
     // MARK: - Test Helpers
     
     private func makeConfiguration(
@@ -342,4 +348,296 @@ final class ConciergeChatServiceTests: XCTestCase {
         XCTAssertNotNil(consent, "Meta should contain 'consent' object")
         XCTAssertNotNil(consent?["state"], "Consent should contain 'state' key")
     }
+
+    // MARK: - Auth Token: Chat Payload
+
+    private func chatConversation(from payload: [String: Any]) -> [String: Any]? {
+        guard let event = extractFirstEvent(from: payload),
+              let query = event["query"] as? [String: Any],
+              let conversation = query["conversation"] as? [String: Any] else {
+            return nil
+        }
+        return conversation
+    }
+
+    func test_createChatPayload_withToken_attachesAuthDataPartAlongsideMessage() throws {
+        // Given
+        let service = ConciergeChatService(configuration: makeConfiguration())
+
+        // When
+        let data = try service.createChatPayload(query: "hello", token: "token-abc")
+        let payload = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let conversation = chatConversation(from: payload)
+
+        // Then
+        XCTAssertNotNil(conversation?["message"], "message should still be present")
+        let auth = conversation?["data"] as? [String: Any]
+        XCTAssertEqual(auth?["type"] as? String, "auth")
+        XCTAssertEqual((auth?["payload"] as? [String: Any])?["token"] as? String, "token-abc")
+    }
+
+    func test_createChatPayload_withNilToken_omitsAuthDataPart() throws {
+        // Given
+        let service = ConciergeChatService(configuration: makeConfiguration())
+
+        // When
+        let data = try service.createChatPayload(query: "hello", token: nil)
+        let payload = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        // Then
+        XCTAssertNil(chatConversation(from: payload)?["data"], "No data part should be present without a token")
+    }
+
+    func test_createChatPayload_withEmptyToken_omitsAuthDataPart() throws {
+        // Given
+        let service = ConciergeChatService(configuration: makeConfiguration())
+
+        // When
+        let data = try service.createChatPayload(query: "hello", token: "")
+        let payload = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        // Then
+        XCTAssertNil(chatConversation(from: payload)?["data"])
+    }
+
+    // MARK: - Auth Token: Feedback Payload
+
+    private func feedbackConversation(from payload: [String: Any]) -> [String: Any]? {
+        guard let xdm = payload["xdm"] as? [String: Any],
+              let conversation = xdm["conversation"] as? [String: Any] else {
+            return nil
+        }
+        return conversation
+    }
+
+    func test_createFeedbackPayload_withToken_attachesAuthDataPartInXdmConversation() throws {
+        // Given
+        let service = ConciergeChatService(configuration: makeConfiguration())
+        let feedbackData: [String: Any] = [
+            "eventType": "conversation.feedback",
+            "xdm": [
+                "conversation": [
+                    "feedback": ["source": "end-user"],
+                    "turnID": "turn-1"
+                ]
+            ]
+        ]
+
+        // When
+        let data = try service.createFeedbackPayload(data: feedbackData, token: "token-abc")
+        let payload = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let conversation = feedbackConversation(from: payload)
+
+        // Then
+        XCTAssertNotNil(conversation?["turnID"], "turnID should still be present")
+        let auth = conversation?["data"] as? [String: Any]
+        XCTAssertEqual(auth?["type"] as? String, "auth")
+        XCTAssertEqual((auth?["payload"] as? [String: Any])?["token"] as? String, "token-abc")
+    }
+
+    func test_createFeedbackPayload_withNilToken_omitsAuthDataPart() throws {
+        // Given
+        let service = ConciergeChatService(configuration: makeConfiguration())
+        let feedbackData: [String: Any] = [
+            "xdm": ["conversation": ["turnID": "turn-1"]]
+        ]
+
+        // When
+        let data = try service.createFeedbackPayload(data: feedbackData, token: nil)
+        let payload = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+        // Then
+        XCTAssertNil(feedbackConversation(from: payload)?["data"])
+    }
+
+    // MARK: - Auth Token: Helpers
+
+    func test_authDataPart_withToken_returnsAuthShape() {
+        let part = ConciergeChatService.authDataPart(for: "token-abc")
+        XCTAssertEqual(part?["type"] as? String, "auth")
+        XCTAssertEqual((part?["payload"] as? [String: Any])?["token"] as? String, "token-abc")
+    }
+
+    func test_authDataPart_withNilEmptyOrBlank_returnsNil() {
+        XCTAssertNil(ConciergeChatService.authDataPart(for: nil))
+        XCTAssertNil(ConciergeChatService.authDataPart(for: ""))
+        XCTAssertNil(ConciergeChatService.authDataPart(for: "   "))
+        XCTAssertNil(ConciergeChatService.authDataPart(for: "\n\t "))
+    }
+
+    // MARK: - Auth Token: Resolver
+
+    func test_resolver_withNoProvider_returnsNil() async {
+        ConciergeAuthTokenResolver.shared.setProvider(nil)
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertNil(token)
+    }
+
+    func test_resolver_returnsSynchronousProviderValue() async {
+        ConciergeAuthTokenResolver.shared.setProvider { "token-abc" }
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertEqual(token, "token-abc")
+    }
+
+    func test_resolver_awaitsAsynchronousProviderValue() async {
+        ConciergeAuthTokenResolver.shared.setProvider {
+            try? await Task.sleep(nanoseconds: 20_000_000) // 20ms — provider suspends
+            return "async-token"
+        }
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertEqual(token, "async-token")
+    }
+
+    func test_resolver_providerSlowerThanTimeout_resolvesToNilAtTheBound() async {
+        let original = ConciergeAuthTokenResolver.providerTimeoutNanoseconds
+        ConciergeAuthTokenResolver.providerTimeoutNanoseconds = 100_000_000 // 100ms
+        defer { ConciergeAuthTokenResolver.providerTimeoutNanoseconds = original }
+
+        // Provider that takes far longer than the bound; resolveToken must not wait for it.
+        ConciergeAuthTokenResolver.shared.setProvider {
+            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s
+            return "too-late"
+        }
+
+        let start = Date()
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertNil(token, "A provider slower than the timeout must yield no token")
+        XCTAssertLessThan(elapsed, 1.0, "resolveToken must return at the timeout, not wait for the provider")
+    }
+
+    func test_resolver_withBlankToken_returnsNil() async {
+        ConciergeAuthTokenResolver.shared.setProvider { "   " }
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertNil(token)
+    }
+
+    func test_resolver_afterClear_returnsNil() async {
+        ConciergeAuthTokenResolver.shared.setProvider { "token-abc" }
+        ConciergeAuthTokenResolver.shared.setProvider(nil)
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertNil(token)
+    }
+
+    func test_resolver_usesMostRecentProvider() async {
+        ConciergeAuthTokenResolver.shared.setProvider { "first" }
+        ConciergeAuthTokenResolver.shared.setProvider { "second" }
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertEqual(token, "second")
+    }
+
+    func test_resolver_invokesProviderEveryCall_neverCaches() async {
+        actor Counter { var n = 0; func next() -> Int { n += 1; return n } }
+        let counter = Counter()
+        ConciergeAuthTokenResolver.shared.setProvider { "token-\(await counter.next())" }
+
+        let first = await ConciergeAuthTokenResolver.shared.resolveToken()
+        let second = await ConciergeAuthTokenResolver.shared.resolveToken()
+
+        XCTAssertEqual(first, "token-1")
+        XCTAssertEqual(second, "token-2")
+    }
+
+    // MARK: - Auth Token: Public API
+
+    func test_setAuthTokenProvider_registersWithResolver() async {
+        Concierge.setAuthTokenProvider { "athlete-token" }
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertEqual(token, "athlete-token")
+    }
+
+    func test_setAuthTokenProvider_nil_clearsProvider() async {
+        Concierge.setAuthTokenProvider { "athlete-token" }
+        Concierge.setAuthTokenProvider(nil)
+        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        XCTAssertNil(token)
+    }
+
+    // MARK: - Auth Token: Request-path integration (stubbed network)
+
+    func test_streamChat_withToken_omitsAuthorizationHeader() async {
+        StubURLProtocol.reset()
+        ConciergeAuthTokenResolver.shared.setProvider { "athlete-token-123" }
+        let service = makeStubbedService()
+
+        service.streamChat("hello", onChunk: { _ in }, onComplete: { _ in })
+        await waitForCondition(timeout: 3.0) { StubURLProtocol.count >= 1 }
+
+        guard let request = StubURLProtocol.last else {
+            XCTFail("streamChat did not issue a request")
+            return
+        }
+        // The token rides in the body (covered by the payload-builder tests) — never a header.
+        let headers = request.allHTTPHeaderFields ?? [:]
+        XCTAssertNil(headers.keys.first { $0.caseInsensitiveCompare("Authorization") == .orderedSame },
+                     "The token must never be sent as an Authorization header")
+        XCTAssertFalse(headers.values.contains { $0.contains("athlete-token-123") },
+                       "The token must not appear in any header")
+    }
+
+    func test_service_concurrentTurns_areThreadSafe() async {
+        StubURLProtocol.reset()
+        ConciergeAuthTokenResolver.shared.setProvider { "tok" }
+        let service = makeStubbedService()
+
+        // Hammer one service from many concurrent turns; each stomps the shared handler/dataTask
+        // state. The lock must keep this crash- and deadlock-free (verified under Thread Sanitizer).
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<50 {
+                group.addTask { service.streamChat("hi", onChunk: { _ in }, onComplete: { _ in }) }
+            }
+        }
+        await waitForCondition(timeout: 5.0) { StubURLProtocol.count >= 1 }
+        XCTAssertGreaterThanOrEqual(StubURLProtocol.count, 1, "concurrent turns completed without crash or deadlock")
+    }
+
+    // MARK: - Stubbed-network helpers
+
+    private func makeStubbedService() -> ConciergeChatService {
+        let model = ConciergeConfiguration(consentCollectValue: "y",
+                                           datastream: "ds-123",
+                                           ecid: "ecid-123",
+                                           server: "test.example.com",
+                                           surfaces: ["web://test.adobe.com/surface"])
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        sessionConfig.protocolClasses = [StubURLProtocol.self]
+        return ConciergeChatService(configuration: model, urlSessionConfiguration: sessionConfig)
+    }
+
+    private func waitForCondition(timeout: TimeInterval, _ condition: @escaping () -> Bool) async {
+        let start = Date()
+        while !condition() && Date().timeIntervalSince(start) < timeout {
+            try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+        }
+    }
+}
+
+/// Intercepts requests from an injected `URLSessionConfiguration` so tests can drive the service's
+/// request path without real networking. Captures requests (thread-safe) and returns an empty 200.
+private final class StubURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var requests: [URLRequest] = []
+
+    static func reset() { lock.lock(); requests = []; lock.unlock() }
+    static var count: Int { lock.lock(); defer { lock.unlock() }; return requests.count }
+    static var last: URLRequest? { lock.lock(); defer { lock.unlock() }; return requests.last }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        StubURLProtocol.lock.lock()
+        StubURLProtocol.requests.append(request)
+        StubURLProtocol.lock.unlock()
+
+        if let url = request.url,
+           let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) {
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        }
+        client?.urlProtocol(self, didLoad: Data())
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
