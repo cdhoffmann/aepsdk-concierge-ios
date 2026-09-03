@@ -489,18 +489,17 @@ final class ConciergeChatServiceTests: XCTestCase {
     }
 
     func test_resolver_providerSlowerThanTimeout_resolvesToNilAtTheBound() async {
-        let original = ConciergeAuthTokenResolver.providerTimeoutNanoseconds
-        ConciergeAuthTokenResolver.providerTimeoutNanoseconds = 100_000_000 // 100ms
-        defer { ConciergeAuthTokenResolver.providerTimeoutNanoseconds = original }
+        // Inject a short timeout instead of mutating shared state.
+        let resolver = ConciergeAuthTokenResolver(timeoutNanoseconds: 100_000_000) // 100ms
 
         // Provider that takes far longer than the bound; resolveToken must not wait for it.
-        ConciergeAuthTokenResolver.shared.setProvider {
+        resolver.setProvider {
             try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s
             return "too-late"
         }
 
         let start = Date()
-        let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+        let token = await resolver.resolveToken()
         let elapsed = Date().timeIntervalSince(start)
 
         XCTAssertNil(token, "A provider slower than the timeout must yield no token")
@@ -558,8 +557,7 @@ final class ConciergeChatServiceTests: XCTestCase {
 
     func test_streamChat_withToken_omitsAuthorizationHeader() async {
         StubURLProtocol.reset()
-        ConciergeAuthTokenResolver.shared.setProvider { "athlete-token-123" }
-        let service = makeStubbedService()
+        let service = makeStubbedService(resolver: makeResolver(returning: "athlete-token-123"))
 
         service.streamChat("hello", onChunk: { _ in }, onComplete: { _ in })
         await waitForCondition(timeout: 3.0) { StubURLProtocol.count >= 1 }
@@ -578,8 +576,7 @@ final class ConciergeChatServiceTests: XCTestCase {
 
     func test_service_concurrentTurns_areThreadSafe() async {
         StubURLProtocol.reset()
-        ConciergeAuthTokenResolver.shared.setProvider { "tok" }
-        let service = makeStubbedService()
+        let service = makeStubbedService(resolver: makeResolver(returning: "tok"))
 
         // Hammer one service from many concurrent turns; each stomps the shared handler/dataTask
         // state. The lock must keep this crash- and deadlock-free (verified under Thread Sanitizer).
@@ -594,8 +591,7 @@ final class ConciergeChatServiceTests: XCTestCase {
 
     func test_sendFeedback_issuesRequestThroughService() async {
         StubURLProtocol.reset()
-        ConciergeAuthTokenResolver.shared.setProvider { "athlete-token-123" }
-        let service = makeStubbedService()
+        let service = makeStubbedService(resolver: makeResolver(returning: "athlete-token-123"))
 
         service.sendFeedback(data: ["xdm": ["conversation": ["feedback": ["source": "end-user"], "turnID": "t-1"]]])
         await waitForCondition(timeout: 3.0) { StubURLProtocol.count >= 1 }
@@ -633,6 +629,27 @@ final class ConciergeChatServiceTests: XCTestCase {
         XCTAssertNotNil(received.value, "streamChat should surface a ConciergeError when the URL can't be built")
     }
 
+    func test_streamChat_misconfigured_failsFastEvenWithSlowProvider() async {
+        // A registered-but-slow provider must not delay surfacing an unrelated config error:
+        // validation now runs before the token is awaited.
+        let resolver = ConciergeAuthTokenResolver()
+        resolver.setProvider {
+            try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s — far longer than the test waits
+            return "late"
+        }
+        // makeConfiguration() has no server, so createUrl() throws before the provider is consulted.
+        let service = ConciergeChatService(configuration: makeConfiguration(), resolver: resolver)
+        let received = LockedBox<ConciergeError?>(nil)
+
+        let start = Date()
+        service.streamChat("hi", onChunk: { _ in }, onComplete: { received.value = $0 })
+        await waitForCondition(timeout: 3.0) { received.value != nil }
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertNotNil(received.value, "the config error should surface")
+        XCTAssertLessThan(elapsed, 2.0, "must fail fast, not wait behind the slow provider")
+    }
+
     func test_sendFeedback_withUnbuildableURL_doesNotIssueRequest() async {
         StubURLProtocol.reset()
         let sessionConfig = URLSessionConfiguration.ephemeral
@@ -661,7 +678,7 @@ final class ConciergeChatServiceTests: XCTestCase {
 
     // MARK: - Stubbed-network helpers
 
-    private func makeStubbedService() -> ConciergeChatService {
+    private func makeStubbedService(resolver: ConciergeAuthTokenResolver = .shared) -> ConciergeChatService {
         let model = ConciergeConfiguration(consentCollectValue: "y",
                                            datastream: "ds-123",
                                            ecid: "ecid-123",
@@ -669,7 +686,14 @@ final class ConciergeChatServiceTests: XCTestCase {
                                            surfaces: ["web://test.adobe.com/surface"])
         let sessionConfig = URLSessionConfiguration.ephemeral
         sessionConfig.protocolClasses = [StubURLProtocol.self]
-        return ConciergeChatService(configuration: model, urlSessionConfiguration: sessionConfig)
+        return ConciergeChatService(configuration: model, urlSessionConfiguration: sessionConfig, resolver: resolver)
+    }
+
+    /// A resolver with a provider already registered, injected per test so no shared state leaks.
+    private func makeResolver(returning token: String) -> ConciergeAuthTokenResolver {
+        let resolver = ConciergeAuthTokenResolver()
+        resolver.setProvider { token }
+        return resolver
     }
 
     private func waitForCondition(timeout: TimeInterval, _ condition: @escaping () -> Bool) async {

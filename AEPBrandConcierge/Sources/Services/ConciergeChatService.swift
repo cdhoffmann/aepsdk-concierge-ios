@@ -32,6 +32,7 @@ class ConciergeChatService: NSObject {
 
     private var configuration: ConciergeConfiguration
     private var session: URLSession!
+    private let resolver: ConciergeAuthTokenResolver
 
     /// Serializes the mutable request state below, which is written on the Swift concurrency pool
     /// (streamChat's Task) and read/cleared on the URLSession delegate queue. The lock is only ever
@@ -56,8 +57,11 @@ class ConciergeChatService: NSObject {
 
     // MARK: - Initialization
 
-    init(configuration: ConciergeConfiguration, urlSessionConfiguration: URLSessionConfiguration = .default) {
+    init(configuration: ConciergeConfiguration,
+         urlSessionConfiguration: URLSessionConfiguration = .default,
+         resolver: ConciergeAuthTokenResolver = .shared) {
         self.configuration = configuration
+        self.resolver = resolver
         super.init()
 
         session = URLSession(configuration: urlSessionConfiguration, delegate: self, delegateQueue: nil)
@@ -69,10 +73,16 @@ class ConciergeChatService: NSObject {
         // Resolve the token (which may await an async provider) and assemble/send the request in a
         // Task, off the caller's thread — awaiting never blocks a thread, so the UI can't freeze.
         Task { [weak self] in
-            guard let self = self else { return }
+            // If the service is torn down before this Task runs, still fire onComplete so a caller
+            // awaiting completion isn't left hanging (the request itself never started).
+            guard let self = self else { onComplete(.unknown); return }
             do {
-                let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+                // Validate everything that doesn't need the token first, so an unrelated
+                // misconfiguration fails fast instead of waiting behind the async provider.
                 let url = try self.createUrl()
+                try self.validateChatConfiguration()
+
+                let token = await self.resolver.resolveToken()
                 let payload = try self.createChatPayload(query: query, token: token)
 
                 // Register handlers only once the request is known to be valid, so a failed turn
@@ -110,8 +120,9 @@ class ConciergeChatService: NSObject {
         Task { [weak self] in
             guard let self = self else { return }
             do {
-                let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+                // Build the URL first, so a config error fails fast rather than behind the provider.
                 let url = try self.createUrl()
+                let token = await self.resolver.resolveToken()
                 let payload = try self.createFeedbackPayload(data: data, token: token)
 
                 var request = URLRequest(url: url)
@@ -181,6 +192,16 @@ class ConciergeChatService: NSObject {
         return url
     }
 
+    /// Validates the token-independent config a chat request needs and returns the ECID, so a
+    /// misconfiguration fails fast (before the async token provider is awaited) instead of behind it.
+    /// - Returns: the configured ECID.
+    @discardableResult
+    private func validateChatConfiguration() throws -> String {
+        guard let ecid = configuration.ecid else { throw ConciergeError.invalidEcid("Unable to create concierge request payload. ECID is nil.") }
+        guard !configuration.surfaces.isEmpty else { throw ConciergeError.invalidSurfaces("Unable to create concierge request payload. No surfaces were provided.") }
+        return ecid
+    }
+
     /// Creates the JSON payload for a chat request.
     /// - Parameters:
     ///   - query: The user's message.
@@ -188,8 +209,7 @@ class ConciergeChatService: NSObject {
     /// - Returns: JSON data for the request body
     /// - Note: Internal visibility for testing
     func createChatPayload(query: String, token: String? = nil) throws -> Data {
-        guard let ecid = configuration.ecid else { throw ConciergeError.invalidEcid("Unable to create concierge request payload. ECID is nil.") }
-        guard !configuration.surfaces.isEmpty else { throw ConciergeError.invalidSurfaces("Unable to create concierge request payload. No surfaces were provided.") }
+        let ecid = try validateChatConfiguration()
 
         let consentState = ConsentState(configValue: configuration.consentCollectValue).payloadValue
 
