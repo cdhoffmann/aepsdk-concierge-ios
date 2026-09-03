@@ -592,6 +592,73 @@ final class ConciergeChatServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(StubURLProtocol.count, 1, "concurrent turns completed without crash or deadlock")
     }
 
+    func test_sendFeedback_issuesRequestThroughService() async {
+        StubURLProtocol.reset()
+        ConciergeAuthTokenResolver.shared.setProvider { "athlete-token-123" }
+        let service = makeStubbedService()
+
+        service.sendFeedback(data: ["xdm": ["conversation": ["feedback": ["source": "end-user"], "turnID": "t-1"]]])
+        await waitForCondition(timeout: 3.0) { StubURLProtocol.count >= 1 }
+        try? await Task.sleep(nanoseconds: 300_000_000) // let the completion handler run
+
+        guard let request = StubURLProtocol.last else {
+            XCTFail("sendFeedback did not issue a request")
+            return
+        }
+        let headers = request.allHTTPHeaderFields ?? [:]
+        XCTAssertNil(headers.keys.first { $0.caseInsensitiveCompare("Authorization") == .orderedSame },
+                     "Feedback must not send the token as an Authorization header")
+    }
+
+    func test_sendFeedback_networkError_isHandledWithoutCrashing() async {
+        StubURLProtocol.reset()
+        StubURLProtocol.shouldFail = true
+        let service = makeStubbedService()
+
+        service.sendFeedback(data: ["xdm": ["conversation": ["turnID": "t-1"]]])
+        await waitForCondition(timeout: 3.0) { StubURLProtocol.count >= 1 }
+        try? await Task.sleep(nanoseconds: 300_000_000) // let the failing completion run
+
+        XCTAssertGreaterThanOrEqual(StubURLProtocol.count, 1, "the request was issued; a network error is handled quietly")
+    }
+
+    func test_streamChat_withUnbuildableURL_completesWithError() async {
+        // makeConfiguration() has no server, so createUrl() throws — exercising streamChat's catch.
+        let service = ConciergeChatService(configuration: makeConfiguration())
+        let received = LockedBox<ConciergeError?>(nil)
+
+        service.streamChat("hi", onChunk: { _ in }, onComplete: { received.value = $0 })
+        await waitForCondition(timeout: 3.0) { received.value != nil }
+
+        XCTAssertNotNil(received.value, "streamChat should surface a ConciergeError when the URL can't be built")
+    }
+
+    func test_sendFeedback_withUnbuildableURL_doesNotIssueRequest() async {
+        StubURLProtocol.reset()
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        sessionConfig.protocolClasses = [StubURLProtocol.self]
+        // No server -> createUrl() throws inside sendFeedback's Task before any request is sent.
+        let service = ConciergeChatService(configuration: makeConfiguration(), urlSessionConfiguration: sessionConfig)
+
+        service.sendFeedback(data: ["xdm": ["conversation": ["turnID": "t-1"]]])
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(StubURLProtocol.count, 0, "no request should be issued when the URL can't be built")
+    }
+
+    func test_createFeedbackPayload_withTokenButNoConversationNode_omitsToken() throws {
+        let service = ConciergeChatService(configuration: makeConfiguration())
+        // xdm present but no `conversation` node -> the token can't attach; the branch warns and omits.
+        let data: [String: Any] = ["xdm": ["identityMap": ["ECID": [["id": "e"]]]]]
+
+        let payloadData = try service.createFeedbackPayload(data: data, token: "athlete-token-123")
+        let payload = try JSONSerialization.jsonObject(with: payloadData) as! [String: Any]
+
+        XCTAssertNil((payload["xdm"] as? [String: Any])?["conversation"], "no conversation node was present")
+        let json = String(data: payloadData, encoding: .utf8) ?? ""
+        XCTAssertFalse(json.contains("athlete-token-123"), "token omitted when there is no conversation node to attach to")
+    }
+
     // MARK: - Stubbed-network helpers
 
     private func makeStubbedService() -> ConciergeChatService {
@@ -618,10 +685,15 @@ final class ConciergeChatServiceTests: XCTestCase {
 private final class StubURLProtocol: URLProtocol {
     private static let lock = NSLock()
     private static var requests: [URLRequest] = []
+    private static var _shouldFail = false
 
-    static func reset() { lock.lock(); requests = []; lock.unlock() }
+    static func reset() { lock.lock(); requests = []; _shouldFail = false; lock.unlock() }
     static var count: Int { lock.lock(); defer { lock.unlock() }; return requests.count }
     static var last: URLRequest? { lock.lock(); defer { lock.unlock() }; return requests.last }
+    static var shouldFail: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return _shouldFail }
+        set { lock.lock(); defer { lock.unlock() }; _shouldFail = newValue }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -629,8 +701,13 @@ private final class StubURLProtocol: URLProtocol {
     override func startLoading() {
         StubURLProtocol.lock.lock()
         StubURLProtocol.requests.append(request)
+        let shouldFail = StubURLProtocol._shouldFail
         StubURLProtocol.lock.unlock()
 
+        if shouldFail {
+            client?.urlProtocol(self, didFailWithError: NSError(domain: "StubURLProtocol", code: -1))
+            return
+        }
         if let url = request.url,
            let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil) {
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -640,4 +717,15 @@ private final class StubURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+/// Thread-safe box for capturing a callback value from a background task in a test.
+private final class LockedBox<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value: T
+    init(_ value: T) { _value = value }
+    var value: T {
+        get { lock.lock(); defer { lock.unlock() }; return _value }
+        set { lock.lock(); defer { lock.unlock() }; _value = newValue }
+    }
 }

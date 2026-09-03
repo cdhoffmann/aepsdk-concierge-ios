@@ -96,13 +96,9 @@ class ConciergeChatService: NSObject {
 
                 self.dataTask?.resume()
             } catch {
-                if let error = error as? ConciergeError {
-                    Log.warning(label: self.LOG_TAG, error.localizedDescription)
-                    onComplete(error)
-                } else {
-                    Log.warning(label: self.LOG_TAG, ConciergeError.unknown.localizedDescription)
-                    onComplete(.unknown)
-                }
+                let conciergeError = (error as? ConciergeError) ?? .unknown
+                Log.warning(label: self.LOG_TAG, conciergeError.localizedDescription)
+                onComplete(conciergeError)
             }
         }
     }
@@ -141,11 +137,8 @@ class ConciergeChatService: NSObject {
                     }
                 }.resume()
             } catch {
-                if let error = error as? ConciergeError {
-                    Log.warning(label: self.LOG_TAG, error.localizedDescription)
-                } else {
-                    Log.warning(label: self.LOG_TAG, ConciergeError.unknown.localizedDescription)
-                }
+                let conciergeError = (error as? ConciergeError) ?? .unknown
+                Log.warning(label: self.LOG_TAG, conciergeError.localizedDescription)
             }
         }
     }
