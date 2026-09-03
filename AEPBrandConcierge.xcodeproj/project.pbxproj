@@ -30,6 +30,7 @@
 		24037AC22EF3648600FF4031 /* Concierge+PublicAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037ABF2EF3648600FF4031 /* Concierge+PublicAPI.swift */; };
 		24037AC32EF3648600FF4031 /* Concierge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037ABE2EF3648600FF4031 /* Concierge.swift */; };
 		24037AC42EF3648600FF4031 /* ConciergeConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037AC02EF3648600FF4031 /* ConciergeConstants.swift */; };
+		0D5EFC769B5F3CE86F6FA7D0 /* ConciergeAuthTokenResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B07E78363AE9961331E4702 /* ConciergeAuthTokenResolver.swift */; };
 		D000ECC120251120000000A1 /* ConciergeEventTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D000ECC120251120000000A0 /* ConciergeEventTracker.swift */; };
 		24037AD72EF364B000FF4031 /* Source.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037AD52EF364B000FF4031 /* Source.swift */; };
 		24037AD82EF364B000FF4031 /* FeedbackPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037ACE2EF364B000FF4031 /* FeedbackPayload.swift */; };
@@ -250,6 +251,7 @@
 		24037ABE2EF3648600FF4031 /* Concierge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Concierge.swift; sourceTree = "<group>"; };
 		24037ABF2EF3648600FF4031 /* Concierge+PublicAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Concierge+PublicAPI.swift"; sourceTree = "<group>"; };
 		24037AC02EF3648600FF4031 /* ConciergeConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConciergeConstants.swift; sourceTree = "<group>"; };
+		2B07E78363AE9961331E4702 /* ConciergeAuthTokenResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConciergeAuthTokenResolver.swift; sourceTree = "<group>"; };
 		D000ECC120251120000000A0 /* ConciergeEventTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConciergeEventTracker.swift; sourceTree = "<group>"; };
 		24037AC52EF364B000FF4031 /* ChatState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatState.swift; sourceTree = "<group>"; };
 		24037AC62EF364B000FF4031 /* CitationDecoration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationDecoration.swift; sourceTree = "<group>"; };
@@ -467,6 +469,7 @@
 				24037ABE2EF3648600FF4031 /* Concierge.swift */,
 				24037ABF2EF3648600FF4031 /* Concierge+PublicAPI.swift */,
 				24037AC02EF3648600FF4031 /* ConciergeConstants.swift */,
+				2B07E78363AE9961331E4702 /* ConciergeAuthTokenResolver.swift */,
 				D000ECC120251120000000A0 /* ConciergeEventTracker.swift */,
 				24070DF09312406A88B8F60F /* ConciergeTrackingEvent.swift */,
 			);
@@ -1211,6 +1214,7 @@
 				24037AC32EF3648600FF4031 /* Concierge.swift in Sources */,
 				4CC11B1E2F5A676D00EEF226 /* ProductCardData.swift in Sources */,
 				24037AC42EF3648600FF4031 /* ConciergeConstants.swift in Sources */,
+				0D5EFC769B5F3CE86F6FA7D0 /* ConciergeAuthTokenResolver.swift in Sources */,
 				D000ECC120251120000000A1 /* ConciergeEventTracker.swift in Sources */,
 				1297F79D2A9C4E61BBBE69DC /* ConciergeTrackingEvent.swift in Sources */,
 				B283F5767264476781252EEC /* ConciergeCardTapHandler.swift in Sources */,
