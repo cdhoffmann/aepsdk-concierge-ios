@@ -356,9 +356,10 @@ final class ChatController: ObservableObject {
             ]
         ]
 
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             let token = await ConciergeAuthTokenResolver.shared.resolveToken()
-            chatService.sendFeedback(data: feedbackEventData, token: token)
+            self.chatService.sendFeedback(data: feedbackEventData, token: token)
         }
 
         dispatchTrackingEvent(.feedbackSubmitted(
@@ -452,9 +453,10 @@ final class ChatController: ObservableObject {
         var responseStartedDispatched = false
 
         // Resolve the auth token off the UI thread, then send the turn on the main actor.
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             let token = await ConciergeAuthTokenResolver.shared.resolveToken()
-            chatService.streamChat(query, token: token,
+            self.chatService.streamChat(query, token: token,
             onChunk: { [weak self] payload in
                 Task { @MainActor in
                     guard let self = self else { return }
