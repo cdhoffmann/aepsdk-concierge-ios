@@ -18,7 +18,7 @@ final class MockChatService: ConciergeChatService {
     var shouldCallComplete: Bool = true
     private var pendingOnComplete: ((ConciergeError?) -> Void)? = nil
 
-    override func streamChat(_ query: String, onChunk: @escaping (ConversationPayload) -> Void, onComplete: @escaping (ConciergeError?) -> Void) {
+    override func streamChat(_ query: String, token: String?, onChunk: @escaping (ConversationPayload) -> Void, onComplete: @escaping (ConciergeError?) -> Void) {
         // Immediately emit planned chunks then complete
         for chunk in plannedChunks {
             onChunk(chunk)
