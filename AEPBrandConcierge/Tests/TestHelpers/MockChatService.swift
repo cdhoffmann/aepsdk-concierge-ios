@@ -18,6 +18,17 @@ final class MockChatService: ConciergeChatService {
     var shouldCallComplete: Bool = true
     private var pendingOnComplete: ((ConciergeError?) -> Void)? = nil
 
+    // Captures for the feedback path
+    private(set) var sendFeedbackCallCount = 0
+    private(set) var lastFeedbackData: [String: Any]? = nil
+    private(set) var lastFeedbackToken: String? = nil
+
+    override func sendFeedback(data: [String: Any], token: String?) {
+        sendFeedbackCallCount += 1
+        lastFeedbackData = data
+        lastFeedbackToken = token
+    }
+
     override func streamChat(_ query: String, token: String?, onChunk: @escaping (ConversationPayload) -> Void, onComplete: @escaping (ConciergeError?) -> Void) {
         // Immediately emit planned chunks then complete
         for chunk in plannedChunks {
