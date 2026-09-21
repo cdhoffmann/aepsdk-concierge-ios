@@ -13,16 +13,13 @@
 import SwiftUI
 
 /// Opens chat with `BuyNowMockURLProtocol` active so a turn gets intercepted and answered with a
-/// canned response carrying product cards with a "Buy now" action — exercising the actual
-/// production rendering/tracking pipeline instead of a hand-constructed demo view.
+/// canned response carrying product cards with a "Buy now" action, exercising the production
+/// rendering/tracking pipeline instead of a hand-constructed demo view.
 ///
-/// The mock is scoped to this scenario: `ContentView.syncBuyNowMock()` only arms it while the
-/// Testing tab is showing Buy Now Mock, so chat opened from the other tabs still hits the real
-/// Concierge service.
+/// `ContentView.syncBuyNowMock()` only arms the mock while this scenario is showing.
 struct BuyNowMockView: View {
     /// Owned by `ContentView`, which combines it with the selected tab/scenario to decide whether
-    /// `BuyNowMockURLProtocol` actually intercepts - so leaving the toggle on doesn't leak the
-    /// canned responses into chats opened from the other tabs.
+    /// `BuyNowMockURLProtocol` actually intercepts.
     @Binding var isMockEnabled: Bool
 
     /// Simulates a sluggish backend. Owned by `ContentView` alongside `isMockEnabled` so the delay

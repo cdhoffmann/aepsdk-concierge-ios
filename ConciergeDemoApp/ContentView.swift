@@ -230,14 +230,12 @@ struct ContentView: View {
     }
 
     /// Scopes the canned "Buy now" responses to the Testing tab's Buy Now Mock scenario, so chat
-    /// opened from anywhere else (SwiftUI, Magic's floating button, UIKit, the other Testing
-    /// scenarios) talks to the real Concierge service.
+    /// opened from anywhere else talks to the real Concierge service.
     ///
-    /// Gating here - at request time, via `BuyNowMockURLProtocol.isEnabled` - rather than by
-    /// swapping `Concierge.urlSessionConfigurationForTesting` is deliberate: the SDK resolves that
-    /// configuration once, when it *creates* a chat session, and reuses an existing session across
-    /// tabs when the configuration/title/subtitle match (which they do here). A session-level swap
-    /// would therefore be ignored for whichever tab opened the chat second.
+    /// Gated at request time via `isEnabled` rather than by swapping
+    /// `Concierge.urlSessionConfigurationForTesting`: the SDK resolves that configuration once,
+    /// when it *creates* a session, and reuses an existing session across tabs here - so a
+    /// session-level swap would be ignored for whichever tab opened the chat second.
     private func syncBuyNowMock() {
         let isActive = selectedTab == .testing
             && buyNowMockScenarioSelected
@@ -253,14 +251,11 @@ struct ContentView: View {
 
         // A "Buy now" CTA opens the mock checkout screen rather than the generic intercept alert:
         // the whole point of the handoff API is that the transaction happens in the app's own UI.
-        // The chat is deliberately left open behind the sheet so the forwarded turn is visible the
-        // moment checkout finishes.
+        // The chat is left open behind the sheet so the forwarded turn is visible after checkout.
         if url.host == "buy-now", let product = CheckoutProduct(buyNowURL: url) {
             // A second "Buy now" tapped during the sheet's dismissal animation would overwrite
             // `pendingCheckout` and reset `checkoutWasCompleted` *before* `onDismiss` runs for the
-            // first one - reporting the previous outcome against the newly tapped product. Ignore
-            // taps until the in-flight checkout has been finalized; the SDK would reject the
-            // overlapping handoff with `.chatInProgress` anyway.
+            // first one, reporting the previous outcome against the newly tapped product.
             guard pendingCheckout == nil else { return true }
 
             pendingCheckout = product
@@ -279,8 +274,7 @@ struct ContentView: View {
         return false
     }
 
-    /// Runs when the checkout sheet goes away for *any* reason - "Complete Purchase", "Abandon
-    /// purchase", the close button, or a swipe-down dismissal - so no exit path can silently skip
+    /// Runs when the checkout sheet goes away for *any* reason, so no exit path can silently skip
     /// the handoff. `checkoutWasCompleted` is the only thing that distinguishes them.
     private func finishCheckout() {
         guard let product = pendingCheckout else { return }
@@ -291,12 +285,9 @@ struct ContentView: View {
         dispatchCheckoutDataHandoff(for: product, outcome: outcome)
     }
 
-    /// Demo-only: forwards the checkout result to the Concierge SDK via the generic data-handoff
-    /// event, the same way a real integrator's post-checkout code would.
-    ///
-    /// Both outcomes are reported. An abandoned cart is a useful signal too - Product Advisor can
-    /// follow up with alternatives - and forwarding only the happy path would make the demo look
-    /// like the API is purchase-specific when it isn't.
+    /// Demo-only: forwards the checkout result to the SDK the same way a real integrator's
+    /// post-checkout code would. Both outcomes are reported - an abandoned cart is a useful signal
+    /// too, and forwarding only the happy path would make the API look purchase-specific.
     private func dispatchCheckoutDataHandoff(for product: CheckoutProduct, outcome: CheckoutOutcome) {
         var productListItem: [String: Any] = ["name": product.name, "quantity": 1]
         if let priceTotal = product.priceTotal {

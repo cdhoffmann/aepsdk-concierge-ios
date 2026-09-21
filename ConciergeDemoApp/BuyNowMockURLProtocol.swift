@@ -15,13 +15,10 @@ import UIKit
 
 /// Intercepts the Concierge chat network request and answers it from a canned SSE response.
 ///
-/// Asking `productCardsPrompt` returns product cards with a `primary` action
-/// (`entity_info.primary`) — the real payload shape that drives the "Buy now" CTA — so the SDK's
-/// actual production pipeline (`ChatController` parsing, `CarouselGroupView`,
-/// `ProductDetailCardView`, tracking) renders it exactly as it would for a live response, with
-/// zero new public API on the SDK. The post-checkout data handoff turn gets a Product Advisor
-/// style accessory recommendation instead, and any other turn gets a plain text reply - so the
-/// headphones carousel only appears when it's the thing being demoed.
+/// Asking `productCardsPrompt` returns product cards with a `primary` action, the real payload
+/// shape that drives the "Buy now" CTA, so the SDK's production pipeline renders it exactly as it
+/// would for a live response. The post-checkout handoff turn gets a Product Advisor style
+/// recommendation instead, and any other turn gets a plain text reply.
 ///
 /// Must be added to the injected `URLSessionConfiguration.protocolClasses` (see
 /// `Concierge.urlSessionConfigurationForTesting` in `AppDelegate.swift`) rather than registered
@@ -31,12 +28,9 @@ import UIKit
 final class BuyNowMockURLProtocol: URLProtocol {
     static var isEnabled = false
 
-    /// Artificial time-to-first-byte, in seconds, applied to every intercepted turn.
-    ///
-    /// Lets the demo show what a sluggish Brand Concierge backend actually feels like: how long the
-    /// typing indicator sits there, whether the composer stays locked, and - once this exceeds
-    /// `ConciergeConstants.Request.READ_TIMEOUT` (15s) - what the timeout failure looks like for a
-    /// regular message versus a `sendDataHandoff(...)` turn. `0` delivers immediately.
+    /// Artificial time-to-first-byte, in seconds, applied to every intercepted turn. Lets the demo
+    /// show a sluggish backend, and - once this exceeds `READ_TIMEOUT` (15s) - the timeout failure
+    /// path. `0` delivers immediately.
     static var responseDelay: TimeInterval = 0
 
     /// Keeps the delayed delivery cancellable so a torn-down task (user closed the chat, SDK timed
@@ -45,9 +39,8 @@ final class BuyNowMockURLProtocol: URLProtocol {
 
     private static let deliveryQueue = DispatchQueue(label: "com.adobe.aep.ConciergeDemoApp.buyNowMockDelivery")
 
-    /// `ConciergeChatService` builds the path as `/brand-concierge` + an optional region segment +
-    /// `/conversations` (e.g. `/brand-concierge/va7/conversations`), and the region comes from
-    /// server-provided configuration. Matching the prefix and suffix rather than a fixed string
+    /// `ConciergeChatService` builds the path as `/brand-concierge` + an optional server-provided
+    /// region segment + `/conversations`. Matching prefix and suffix rather than a fixed string
     /// keeps the mock working whichever region the datastream resolves to.
     override class func canInit(with request: URLRequest) -> Bool {
         guard isEnabled, let url = request.url, url.host == "edge-int.adobedc.net" else { return false }
@@ -103,9 +96,8 @@ final class BuyNowMockURLProtocol: URLProtocol {
 
     // MARK: - Response selection
 
-    /// The prompt a tester must type to get the product carousel. Gating on it keeps ordinary
-    /// chatter card-free, so the "Buy now" CTA only appears when it's actually the thing being
-    /// demoed.
+    /// The prompt a tester must type to get the product carousel, so ordinary chatter stays
+    /// card-free.
     static let productCardsPrompt = "What are some good noise cancelling headphones?"
 
     /// Routing hints the demo app forwards via `Concierge.sendDataHandoff(...)` from checkout.
@@ -148,7 +140,7 @@ final class BuyNowMockURLProtocol: URLProtocol {
     ///
     /// `URLSession` converts a request's `httpBody` into an `httpBodyStream` before handing it to a
     /// `URLProtocol`, so reading `httpBody` alone returns `nil` here. Draining the stream is safe
-    /// because this protocol never forwards the request - it always answers from the canned data.
+    /// because this protocol never forwards the request.
     private static func requestInfo(from request: URLRequest) -> RequestInfo {
         guard let body = bodyData(from: request),
               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
@@ -221,16 +213,10 @@ final class BuyNowMockURLProtocol: URLProtocol {
                                              elements: [productWithBuyNow, productWithoutBuyNow])
     }()
 
-    /// Product Advisor style follow-up for the post-checkout data handoff: complementary
-    /// accessories rather than the headphones the user just bought, so it reads as a genuine
-    /// recommendation next to the app's local "Thank you for purchasing ..." confirmation instead
-    /// of a duplicate of it.
-    ///
-    /// Neither card carries a `primary` action - a second "Buy now" CTA here would loop the demo
-    /// straight back into checkout.
-    ///
-    /// `purchasedProductName` comes from the handoff's own XDM (`productListItems[0].name`), which
-    /// makes the reply double as proof that the app's checkout data actually reached the service.
+    /// Product Advisor style follow-up for the post-checkout handoff: complementary accessories
+    /// rather than the headphones just bought. Neither card carries a `primary` action, so the
+    /// demo can't loop straight back into checkout. `purchasedProductName` comes from the handoff's
+    /// own XDM, which makes the reply double as proof the checkout data reached the service.
     private static func checkoutFollowUpSSEData(purchasedProductName: String?) -> Data {
         let headphoneCase: [String: Any] = [
             "id": "mock-accessory-1",
@@ -267,10 +253,8 @@ final class BuyNowMockURLProtocol: URLProtocol {
         return sseData(message: message, elements: [headphoneCase, cable])
     }
 
-    /// Product Advisor style recovery for an abandoned cart: cheaper alternatives to what the
-    /// shopper walked away from. The budget pick keeps its own "Buy now" CTA so the demo loop can
-    /// be run again with a *different* product, which also shows the checkout screen is driven by
-    /// the payload rather than hardcoded.
+    /// Product Advisor style recovery for an abandoned cart: cheaper alternatives. The budget pick
+    /// keeps its own "Buy now" CTA so the demo loop can be run again with a *different* product.
     private static func abandonedCheckoutSSEData(abandonedProductName: String?) -> Data {
         let budgetPick: [String: Any] = [
             "id": "mock-alternative-1",
@@ -328,17 +312,11 @@ final class BuyNowMockURLProtocol: URLProtocol {
     // MARK: - Mock product imagery
 
     /// Renders an SF Symbol onto a flat background and returns it as a self-contained
-    /// `data:image/png;base64,...` URL.
-    ///
-    /// The previous placeholder service returned a random photo per seed, so the "headphones" card
-    /// could show an ocean wave. Symbols always match the product, and because the bytes are
-    /// inlined the mock stays fully offline - `RemoteImageView`'s `AsyncImage` still performs a
-    /// real `URLSession` load, which supports the `data:` scheme, so the production image path is
-    /// exercised unchanged.
+    /// `data:image/png;base64,...` URL, so the mock stays fully offline while still exercising
+    /// `RemoteImageView`'s real `AsyncImage` load (which supports the `data:` scheme).
     ///
     /// `symbolNames` is a preference list: the first name available on the running OS wins, which
-    /// keeps newer symbols (`waterbottle`, `cable.connector` - both iOS 16) from rendering blank on
-    /// an older deployment target.
+    /// keeps newer symbols from rendering blank on an older deployment target.
     private static func symbolImageURL(_ symbolNames: [String], tint: UIColor) -> String {
         let canvas = CGSize(width: 300, height: 300)
         let configuration = UIImage.SymbolConfiguration(pointSize: 132, weight: .light)
@@ -363,9 +341,8 @@ final class BuyNowMockURLProtocol: URLProtocol {
         return "data:image/png;base64,\(png.base64EncodedString())"
     }
 
-    /// Builds one complete SSE frame. Built via `JSONSerialization` (not a multi-line string    /// literal): the SSE parser in `ConciergeChatService` splits incoming data on newlines and only
-    /// treats lines starting with `"data: "` as a complete JSON object, so the JSON itself must be
-    /// a single line.
+    /// Builds one complete SSE frame via `JSONSerialization` rather than a multi-line string
+    /// literal: the SSE parser splits on newlines, so the JSON itself must be a single line.
     private static func sseData(message: String, elements: [[String: Any]] = []) -> Data {
         var response: [String: Any] = [
             "message": message,

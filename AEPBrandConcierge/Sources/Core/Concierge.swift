@@ -215,11 +215,9 @@ public class Concierge: NSObject, Extension {
             let started = controller.handleDataHandoff(routingHint: payload.routingHint,
                                                        xdmFields: payload.xdmFields,
                                                        localMessage: payload.localMessage) { serviceError in
-                // `self` is captured strongly on purpose. This closure lives only for the duration
-                // of a single turn, and the extension instance is an app-lifetime singleton, so
-                // there is no retain cycle. A weak capture could drop the response event entirely,
-                // leaving the caller to time out with a misleading `.noResponse` instead of the
-                // real outcome.
+                // `self` is captured strongly on purpose. This closure lives only for one turn and
+                // the extension is an app-lifetime singleton, so there is no retain cycle. A weak
+                // capture could drop the response event entirely.
                 let error = serviceError.map { ConciergeDataHandoffError(serviceError: $0) }
                 self.dispatch(event: self.createDataHandoffResponseEvent(for: event, error: error))
             }

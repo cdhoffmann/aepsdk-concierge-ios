@@ -13,8 +13,7 @@
 import SwiftUI
 
 /// The product a "Buy now" CTA handed off to the app, parsed from its `demoapp://buy-now` deep
-/// link. Everything the checkout screen and the subsequent data handoff need comes from the link,
-/// so the flow is driven entirely by the response payload rather than hardcoded in the demo app.
+/// link, so the flow is driven by the response payload rather than hardcoded in the demo app.
 struct CheckoutProduct: Identifiable, Equatable {
     let id = UUID()
     let name: String
@@ -46,11 +45,8 @@ enum CheckoutOutcome {
     case abandoned
 }
 
-/// Mock checkout screen presented when a "Buy now" CTA is tapped in the chat.
-///
-/// Stands in for the native transaction flow a real integrator would run before calling
-/// `Concierge.sendDataHandoff(...)`, which is the whole point of the handoff API: the purchase
-/// happens in the app, outside the chat, and only its outcome is forwarded.
+/// Mock checkout screen presented when a "Buy now" CTA is tapped in the chat. Stands in for the
+/// native transaction flow a real integrator would run before calling `Concierge.sendDataHandoff`.
 struct CheckoutView: View {
     let product: CheckoutProduct
     let onComplete: () -> Void

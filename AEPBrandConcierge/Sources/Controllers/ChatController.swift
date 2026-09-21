@@ -34,9 +34,7 @@ final class ChatController: ObservableObject {
     @Published private(set) var composerState: InputState = .empty
 
     /// Copy rendered into the transcript when a turn fails. Pushed in from the view's theme (see
-    /// `ChatView`), following the same pattern as `applyVoiceInputBehavior`, because the theme
-    /// lives in the SwiftUI environment rather than on the session. Falls back to the stock string
-    /// so a handoff that fails before the chat has ever been shown still reads correctly.
+    /// `ChatView`) because the theme lives in the SwiftUI environment rather than on the session.
     var networkErrorMessage: String = ConciergeCopy.defaultErrorNetwork
 
     // MARK: - Input Controller
@@ -69,14 +67,10 @@ final class ChatController: ObservableObject {
     var micEnabled: Bool { chatState == .idle }
     var sendEnabled: Bool { chatState == .idle && inputController.data.canSend }
 
-    /// Whether the conversation has moved past the welcome state - i.e. the transcript holds at
-    /// least one real turn, whether the user typed it or the app handed it off. Welcome content
-    /// (header + prompt suggestions) doesn't count.
+    /// Whether the transcript holds at least one real turn. Welcome content doesn't count.
     ///
     /// Deliberately not "has the *user* sent a message": a data handoff appends only agent-styled
-    /// messages, so a checkout-driven conversation (the app can hand off while the chat has never
-    /// been opened) would otherwise still be treated as untouched - showing the welcome header
-    /// above the handoff turn and skipping the scroll-to-latest when the chat is opened.
+    /// messages, so a checkout-driven conversation would otherwise still look untouched.
     var hasConversationStarted: Bool {
         messages.contains { message in
             switch message.template {
@@ -273,22 +267,14 @@ final class ChatController: ObservableObject {
         }
     }
 
-    /// Forwards an app-originated data-handoff turn (e.g. a checkout outcome) to Brand Concierge
-    /// the same way an ordinary query is sent, but through the same path `sendMessage` uses for
-    /// the outbound turn itself once it's already past the "append a user bubble" step - so the
-    /// routing hint never renders, only the eventual reply does. If `localMessage` is present and
-    /// non-empty, it's appended immediately as its own message, ahead of the streamed reply.
+    /// Forwards an app-originated data-handoff turn (e.g. a checkout outcome) to Brand Concierge.
+    /// The routing hint never renders; only `localMessage` and the eventual reply do. The turn is
+    /// scrolled to the top like `sendMessage` does, since a handoff is triggered from app UI rather
+    /// than the composer and the transcript would otherwise stay where the user left it.
     ///
-    /// Scrolls the new turn to the top of the transcript exactly as `sendMessage` does, so the
-    /// reply streams into view instead of landing below the fold - a handoff is usually triggered
-    /// from app UI (a checkout screen) rather than from the composer, so the transcript would
-    /// otherwise stay wherever the user last left it.
-    ///
-    /// Returns `false` without starting anything (no local message, no request) when a turn is
-    /// already in flight: `ConciergeChatService` keeps a single `dataTask`/handler pair per
-    /// instance, so a second concurrent turn would overwrite the first one's callbacks and strand
-    /// its completion. A `.error` state is *not* in flight - retrying a handoff after a failed one
-    /// is allowed, and succeeding clears the stale error.
+    /// Returns `false` without starting anything when a turn is already in flight:
+    /// `ConciergeChatService` keeps a single `dataTask`/handler pair per instance, so a second
+    /// concurrent turn would strand the first one's completion. `.error` is *not* in flight.
     @discardableResult
     func handleDataHandoff(routingHint: String,
                            xdmFields: [String: Any],
@@ -318,11 +304,10 @@ final class ChatController: ObservableObject {
     }
 
     /// Scrolls the transcript so `messageId` sits at the top, leaving the rest of the screen for
-    /// the agent response that follows.
+    /// the response that follows.
     ///
     /// The tick is bumped on the next main-queue pass so the id is published *before* the change
-    /// `MessageListView` observes - it reads `userMessageToScrollId` inside the `userScrollTick`
-    /// handler, so a same-pass update would scroll to the previous turn's anchor.
+    /// `MessageListView` observes; a same-pass update would scroll to the previous turn's anchor.
     private func scrollToTop(messageId: UUID) {
         userMessageToScrollId = messageId
         DispatchQueue.main.async {
@@ -519,13 +504,10 @@ final class ChatController: ObservableObject {
 
         // Resolve the auth token off the UI thread, then send the turn on the main actor.
         //
-        // `self` is captured strongly on purpose. The caller's `completion` is only guaranteed
-        // exactly-once by the `defer` inside `onComplete`, which is not registered until
-        // `streamChat` is called below. A weak capture could therefore drop the completion
-        // entirely if the controller were released before this task first resumed, stranding the
-        // caller until the event hub's timeout reported a misleading `.noResponse`. Holding the
-        // controller for the duration of one turn is bounded by the auth-token timeout plus the
-        // network read timeout, and guarantees the caller always hears back.
+        // `self` is captured strongly on purpose: the caller's `completion` is only guaranteed
+        // exactly-once by the `defer` inside `onComplete`, which isn't registered until
+        // `streamChat` is called below. A weak capture could drop the completion entirely if the
+        // controller were released before this task first resumed. The hold is bounded by one turn.
         Task { [self] in
             let token = await ConciergeAuthTokenResolver.shared.resolveToken()
             self.chatService.streamChat(query, token: token, extraXDMFields: extraXDMFields,
@@ -616,9 +598,7 @@ final class ChatController: ObservableObject {
             onComplete: { [weak self] error in
                 Task { @MainActor in
                     // The handoff caller must hear back exactly once on every path out of this
-                    // closure - including the early `return`s below and a deallocated controller.
-                    // A dropped completion strands the public callback until the event-hub
-                    // timeout, which would surface as a misleading `.noResponse`.
+                    // closure, including the early `return`s below and a deallocated controller.
                     var handoffError: ConciergeError? = error
                     defer { completion?(handoffError) }
 
@@ -636,11 +616,10 @@ final class ChatController: ObservableObject {
                             self.messages.remove(at: streamingMessageIndex)
                         }
 
-                        // A failed turn is a *finished* turn: surface the failure in the transcript
-                        // and return to idle, mirroring the empty-response branch below. Parking in
-                        // `.error(.networkFailure)` instead would deadlock the chat - `sendMessage`,
+                        // A failed turn is a *finished* turn: surface the failure and return to
+                        // idle. Parking in `.error` would deadlock the chat - `sendMessage`,
                         // `sendEnabled`, and `micEnabled` all require `.idle`, and the only path
-                        // back to `.idle` runs *inside* a turn those guards prevent from starting.
+                        // back to `.idle` runs inside a turn those guards prevent from starting.
                         self.messages.append(Message(template: .basic(isUserMessage: false),
                                                      messageBody: self.networkErrorMessage))
 
@@ -674,10 +653,9 @@ final class ChatController: ObservableObject {
                             self.messages[streamingMessageIndex] = current
                             completedPayload = current.payload
 
-                            // A response can carry cards with no accompanying text (a handoff that
-                            // returns only product recommendations is the common case). Leaving the
-                            // placeholder behind would render an empty agent bubble above them, so
-                            // drop it - the payload has already been captured for tracking.
+                            // A cards-only response has nothing for the text bubble, so drop the
+                            // placeholder rather than leave an empty one above the cards. The
+                            // payload has already been captured for tracking.
                             if accumulatedContent.isEmpty && !latestElements.isEmpty {
                                 self.messages.remove(at: streamingMessageIndex)
                             }

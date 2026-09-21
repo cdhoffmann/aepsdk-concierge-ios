@@ -37,9 +37,8 @@ final class ConciergeAuthTokenResolver {
     private var _provider: (@Sendable () async -> String?)?
     private var _timeoutNanoseconds: UInt64 = 3_000_000_000 // defaultTimeout in ns; overwritten on setProvider
 
-    /// The time `resolveToken()` can currently spend awaiting the provider, in seconds. Zero when no
-    /// provider is registered, since resolution returns immediately in that case. Callers that need
-    /// to budget a wall-clock timeout around a turn use this to account for the resolution window.
+    /// The time `resolveToken()` can currently spend awaiting the provider, in seconds. Zero when
+    /// no provider is registered. Used by callers budgeting a wall-clock timeout around a turn.
     var configuredTimeout: TimeInterval {
         lock.lock()
         defer { lock.unlock() }
