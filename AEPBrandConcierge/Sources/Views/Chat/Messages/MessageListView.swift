@@ -192,9 +192,29 @@ struct MessageListView: View {
         guard chatState == .processing,
               index == messages.count - 1,
               case .basic(let isUserMessage) = messages[index].template,
-              !isUserMessage,
-              let lastUserIndex = messages.lastIndex(where: { if case .basic(true) = $0.template { return true }; return false })
+              !isUserMessage
+        else { return false }
+
+        // Either the placeholder sits directly below this turn's anchor, or - for a handoff with no
+        // local message - the placeholder *is* the anchor. Without the filler in the handoff case
+        // there's nothing below the anchor to scroll against, so the scroll clamps part-way and
+        // leaves the incoming response below the fold.
+        if isTurnAnchor(at: index - 1) || isTurnAnchor(at: index) { return true }
+
+        guard let lastUserIndex = messages.lastIndex(where: { if case .basic(true) = $0.template { return true }; return false })
         else { return false }
         return lastUserIndex == index - 1
+    }
+
+    /// Returns true when the message at `index` is the anchor the controller scrolled to the top
+    /// for the current turn.
+    ///
+    /// A typed turn anchors on the user's own message, but a `sendDataHandoff(...)` turn anchors on
+    /// its local message, which is rendered as an agent message (the user didn't type it). Asking
+    /// the controller which message it anchored on therefore covers both, where looking for a user
+    /// message only covers the first.
+    private func isTurnAnchor(at index: Int) -> Bool {
+        guard let anchorId = userMessageToScrollId, messages.indices.contains(index) else { return false }
+        return messages[index].id == anchorId
     }
 }
