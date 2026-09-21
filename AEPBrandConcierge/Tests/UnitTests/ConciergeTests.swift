@@ -153,7 +153,9 @@ final class ConciergeTests: XCTestCase {
             .reservedKeyCollision,
             .noActiveSession,
             .chatInProgress,
-            .serviceFailure("Server was unreachable."),
+            .deliveryFailed("Server was unreachable."),
+            .emptyResponse,
+            .deliveryTimeout,
             .noResponse
         ]
 
@@ -167,6 +169,39 @@ final class ConciergeTests: XCTestCase {
         XCTAssertNil(ConciergeDataHandoffError(code: "not_a_real_code"))
     }
 
+    /// A slow turn and a rejected turn call for different app behavior (retry vs. don't), so the
+    /// transport error has to survive the hop into the public taxonomy instead of collapsing into
+    /// one opaque failure.
+    func test_serviceErrors_mapToDistinctPublicCases() {
+        XCTAssertEqual(ConciergeDataHandoffError(serviceError: .timeout(15)), .deliveryTimeout)
+        XCTAssertEqual(ConciergeDataHandoffError(serviceError: .invalidResponseData), .emptyResponse)
+        XCTAssertEqual(ConciergeDataHandoffError(serviceError: .unreachable),
+                       .deliveryFailed(ConciergeError.unreachable.localizedDescription))
+        XCTAssertEqual(ConciergeDataHandoffError(serviceError: .unknown),
+                       .deliveryFailed(ConciergeError.unknown.localizedDescription))
+    }
+
+    /// `code` is public so an app can report a failure to analytics without switching over every
+    /// case, and the values are contracted to match the Android SDK's `rawValue`s.
+    func test_errorCodes_matchAndroidRawValues() {
+        let expected: [(ConciergeDataHandoffError, String)] = [
+            (.missingEventData, "missing_event_data"),
+            (.emptyXdmFields, "empty_xdm_fields"),
+            (.invalidXdmFieldValue, "invalid_xdm_field_value"),
+            (.reservedKeyCollision, "reserved_key_collision"),
+            (.noActiveSession, "no_active_session"),
+            (.chatInProgress, "chat_in_progress"),
+            (.deliveryFailed(nil), "delivery_failed"),
+            (.emptyResponse, "empty_response"),
+            (.deliveryTimeout, "delivery_timeout"),
+            (.noResponse, "no_response")
+        ]
+
+        for (error, code) in expected {
+            XCTAssertEqual(error.code, code)
+        }
+    }
+
     func test_errorCodesAreUnique() {
         let codes: [String] = [
             ConciergeDataHandoffError.missingEventData.code,
@@ -175,7 +210,9 @@ final class ConciergeTests: XCTestCase {
             ConciergeDataHandoffError.reservedKeyCollision.code,
             ConciergeDataHandoffError.noActiveSession.code,
             ConciergeDataHandoffError.chatInProgress.code,
-            ConciergeDataHandoffError.serviceFailure("boom").code,
+            ConciergeDataHandoffError.deliveryFailed("boom").code,
+            ConciergeDataHandoffError.emptyResponse.code,
+            ConciergeDataHandoffError.deliveryTimeout.code,
             ConciergeDataHandoffError.noResponse.code
         ]
 

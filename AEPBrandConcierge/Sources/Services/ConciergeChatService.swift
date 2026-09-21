@@ -326,7 +326,13 @@ extension ConciergeChatService: URLSessionDataDelegate {
         if let error = error {
             // Handle connection errors
             Log.warning(label: LOG_TAG, "An error occurred while connecting to the Concierge server: \(error.localizedDescription)")
-            onCompleteHandler?(.unreachable)
+            // A timed-out turn is reported distinctly from an unreachable host so a data handoff
+            // caller can retry a slow turn without retrying one the service actively rejected.
+            if (error as NSError).code == NSURLErrorTimedOut {
+                onCompleteHandler?(.timeout(Int(ConciergeConstants.Request.READ_TIMEOUT)))
+            } else {
+                onCompleteHandler?(.unreachable)
+            }
         } else {
             // Connection completed (e.g., server closed connection)
             Log.trace(label: LOG_TAG, "Concierge server connection closed.")

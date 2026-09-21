@@ -220,7 +220,7 @@ public class Concierge: NSObject, Extension {
                 // there is no retain cycle. A weak capture could drop the response event entirely,
                 // leaving the caller to time out with a misleading `.noResponse` instead of the
                 // real outcome.
-                let error = serviceError.map { ConciergeDataHandoffError.serviceFailure($0.localizedDescription) }
+                let error = serviceError.map { ConciergeDataHandoffError(serviceError: $0) }
                 self.dispatch(event: self.createDataHandoffResponseEvent(for: event, error: error))
             }
 

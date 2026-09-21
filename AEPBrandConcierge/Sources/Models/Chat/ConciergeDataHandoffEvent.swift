@@ -59,12 +59,23 @@ public enum ConciergeDataHandoffError: Error, Equatable, LocalizedError {
     /// Another Concierge chat turn is currently being processed. The handoff was not started and
     /// nothing was rendered; the app may retry once the chat is no longer processing.
     case chatInProgress
-    /// The chat service failed while forwarding the handoff.
-    case serviceFailure(String)
+    /// Brand Concierge returned an error, or the request could not be completed. The associated
+    /// value carries the underlying service detail when one is available.
+    case deliveryFailed(String?)
+    /// Brand Concierge completed the stream without any renderable response content.
+    case emptyResponse
+    /// Brand Concierge did not complete the handoff within the delivery timeout. Distinguished from
+    /// `deliveryFailed` so an app can retry a slow turn without retrying a rejected one.
+    case deliveryTimeout
     /// The extension never responded (e.g. the call timed out).
     case noResponse
 
-    var code: String {
+    /// A stable, machine-readable identifier for this error.
+    ///
+    /// Public so an app can report the failure to analytics or crash reporting without switching
+    /// over every case. These values match the Android SDK's
+    /// `ConciergeDataHandoffRejectReason.rawValue` so cross-platform reporting lines up.
+    public var code: String {
         switch self {
         case .missingEventData: return "missing_event_data"
         case .emptyXdmFields: return "empty_xdm_fields"
@@ -72,8 +83,23 @@ public enum ConciergeDataHandoffError: Error, Equatable, LocalizedError {
         case .reservedKeyCollision: return "reserved_key_collision"
         case .noActiveSession: return "no_active_session"
         case .chatInProgress: return "chat_in_progress"
-        case .serviceFailure: return "service_failure"
+        case .deliveryFailed: return "delivery_failed"
+        case .emptyResponse: return "empty_response"
+        case .deliveryTimeout: return "delivery_timeout"
         case .noResponse: return "no_response"
+        }
+    }
+
+    /// Maps an internal transport/stream error onto the public handoff taxonomy.
+    init(serviceError: ConciergeError) {
+        switch serviceError {
+        case .timeout:
+            self = .deliveryTimeout
+        case .invalidResponseData:
+            // The controller reports this only when a stream completes with no renderable content.
+            self = .emptyResponse
+        default:
+            self = .deliveryFailed(serviceError.localizedDescription)
         }
     }
 
@@ -85,7 +111,9 @@ public enum ConciergeDataHandoffError: Error, Equatable, LocalizedError {
         case "reserved_key_collision": self = .reservedKeyCollision
         case "no_active_session": self = .noActiveSession
         case "chat_in_progress": self = .chatInProgress
-        case "service_failure": self = .serviceFailure(message ?? "The Concierge service failed.")
+        case "delivery_failed": self = .deliveryFailed(message)
+        case "empty_response": self = .emptyResponse
+        case "delivery_timeout": self = .deliveryTimeout
         case "no_response": self = .noResponse
         default: return nil
         }
@@ -105,8 +133,12 @@ public enum ConciergeDataHandoffError: Error, Equatable, LocalizedError {
             return "Data handoff requires an active Concierge chat session."
         case .chatInProgress:
             return "Data handoff cannot start while another Concierge chat turn is in progress."
-        case .serviceFailure(let message):
-            return message
+        case .deliveryFailed(let message):
+            return message ?? "The Concierge service failed to complete the data handoff."
+        case .emptyResponse:
+            return "The Concierge service completed the data handoff without any response content."
+        case .deliveryTimeout:
+            return "The Concierge service did not complete the data handoff in time."
         case .noResponse:
             return "No response was received for the data handoff."
         }

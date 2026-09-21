@@ -116,7 +116,7 @@ public enum ConciergeConstants {
         /// timeout rather than a wall-clock one (a stream that keeps chunking for longer than
         /// `READ_TIMEOUT` still succeeds), and the event hub's timer starts before auth-token
         /// resolution has even run. Using the same value for both would report `.noResponse` for
-        /// turns that actually completed, and would mask genuine `.serviceFailure` outcomes.
+        /// turns that actually completed, and would mask genuine `.deliveryFailed` outcomes.
         static var dataHandoffResponseTimeout: TimeInterval {
             READ_TIMEOUT + ConciergeAuthTokenResolver.shared.configuredTimeout + DATA_HANDOFF_TIMEOUT_MARGIN
         }
