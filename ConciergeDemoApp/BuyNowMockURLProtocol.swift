@@ -45,8 +45,13 @@ final class BuyNowMockURLProtocol: URLProtocol {
 
     private static let deliveryQueue = DispatchQueue(label: "com.adobe.aep.ConciergeDemoApp.buyNowMockDelivery")
 
+    /// `ConciergeChatService` builds the path as `/brand-concierge` + an optional region segment +
+    /// `/conversations` (e.g. `/brand-concierge/va7/conversations`), and the region comes from
+    /// server-provided configuration. Matching the prefix and suffix rather than a fixed string
+    /// keeps the mock working whichever region the datastream resolves to.
     override class func canInit(with request: URLRequest) -> Bool {
-        isEnabled && request.url?.host == "edge-int.adobedc.net" && request.url?.path == "/brand-concierge/conversations"
+        guard isEnabled, let url = request.url, url.host == "edge-int.adobedc.net" else { return false }
+        return url.path.hasPrefix("/brand-concierge") && url.path.hasSuffix("/conversations")
     }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest {
