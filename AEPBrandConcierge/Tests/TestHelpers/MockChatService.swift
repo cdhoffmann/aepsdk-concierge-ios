@@ -23,13 +23,22 @@ final class MockChatService: ConciergeChatService {
     private(set) var lastFeedbackData: [String: Any]? = nil
     private(set) var lastFeedbackToken: String? = nil
 
+    // Captures for the chat path
+    private(set) var streamChatCallCount = 0
+    private(set) var lastQuery: String? = nil
+    private(set) var lastExtraXDMFields: [String: Any]? = nil
+
     override func sendFeedback(data: [String: Any], token: String?) {
         sendFeedbackCallCount += 1
         lastFeedbackData = data
         lastFeedbackToken = token
     }
 
-    override func streamChat(_ query: String, token: String?, onChunk: @escaping (ConversationPayload) -> Void, onComplete: @escaping (ConciergeError?) -> Void) {
+    override func streamChat(_ query: String, token: String?, extraXDMFields: [String: Any]? = nil, onChunk: @escaping (ConversationPayload) -> Void, onComplete: @escaping (ConciergeError?) -> Void) {
+        streamChatCallCount += 1
+        lastQuery = query
+        lastExtraXDMFields = extraXDMFields
+
         // Immediately emit planned chunks then complete
         for chunk in plannedChunks {
             onChunk(chunk)

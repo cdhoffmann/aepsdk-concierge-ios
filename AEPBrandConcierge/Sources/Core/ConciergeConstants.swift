@@ -80,7 +80,8 @@ public enum ConciergeConstants {
         enum Key {
             static let PAYLOAD = "dataHandoffEvent"
             static let ACCEPTED = "accepted"
-            static let REJECT_REASON = "rejectReason"
+            static let ERROR_CODE = "errorCode"
+            static let ERROR_MESSAGE = "errorMessage"
         }
     }
 
@@ -101,6 +102,24 @@ public enum ConciergeConstants {
     internal enum Request {
         static let READ_TIMEOUT = 15.0
         static let HTTPS = "https://"
+
+        /// Slack added on top of the network read timeout and the auth-token resolution window when
+        /// budgeting a data handoff response. Covers the main-actor hop, payload validation, and
+        /// rendering of the final chunk.
+        static let DATA_HANDOFF_TIMEOUT_MARGIN = 5.0
+
+        /// Wall-clock budget for the data handoff response event.
+        ///
+        /// The response event is only dispatched once the *entire* streamed turn finishes, so this
+        /// has to outlast everything that happens in between. `READ_TIMEOUT` on its own is not
+        /// enough for two reasons: it is `URLRequest.timeoutInterval`, which is an *inactivity*
+        /// timeout rather than a wall-clock one (a stream that keeps chunking for longer than
+        /// `READ_TIMEOUT` still succeeds), and the event hub's timer starts before auth-token
+        /// resolution has even run. Using the same value for both would report `.noResponse` for
+        /// turns that actually completed, and would mask genuine `.serviceFailure` outcomes.
+        static var dataHandoffResponseTimeout: TimeInterval {
+            READ_TIMEOUT + ConciergeAuthTokenResolver.shared.configuredTimeout + DATA_HANDOFF_TIMEOUT_MARGIN
+        }
 
         enum EventType {
             static let CONVERSATION_FEEDBACK = "conversation.feedback"

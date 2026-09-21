@@ -55,8 +55,9 @@ class ConciergeChatService: NSObject {
     // MARK: - Streaming Chat / Queries
 
     /// Builds and sends the streaming request. `token` is resolved by the caller (off the UI thread)
-    /// and attached to the request body; pass `nil` to send the turn without one.
-    func streamChat(_ query: String, token: String?,
+    /// and attached to the request body; pass `nil` to send the turn without one. `extraXDMFields`,
+    /// if provided, is merged into the request's `xdm` object alongside `identityMap`.
+    func streamChat(_ query: String, token: String?, extraXDMFields: [String: Any]? = nil,
                     onChunk: @escaping (ConversationPayload) -> Void,
                     onComplete: @escaping (ConciergeError?) -> Void) {
         do {
@@ -66,7 +67,7 @@ class ConciergeChatService: NSObject {
             onChunkHandler = onChunk
             onCompleteHandler = onComplete
 
-            let payload = try createChatPayload(query: query, token: token)
+            let payload = try createChatPayload(query: query, token: token, extraXDMFields: extraXDMFields)
 
             var request = URLRequest(url: url)
             request.httpMethod = ConciergeConstants.HTTPMethods.POST
@@ -176,9 +177,11 @@ class ConciergeChatService: NSObject {
     /// - Parameters:
     ///   - query: The user's message.
     ///   - token: The app-supplied auth token to attach, or `nil`/blank to omit the `data` part entirely.
+    ///   - extraXDMFields: Additional XDM data to merge alongside `identityMap`, e.g. from a
+    ///     `ConciergeDataHandoffEvent`. The SDK's own `identityMap` always wins on key collision.
     /// - Returns: JSON data for the request body
     /// - Note: Internal visibility for testing
-    func createChatPayload(query: String, token: String? = nil) throws -> Data {
+    func createChatPayload(query: String, token: String? = nil, extraXDMFields: [String: Any]? = nil) throws -> Data {
         // ECID here is only the readiness gate; the full identityMap is forwarded below
         guard configuration.ecid != nil else { throw ConciergeError.invalidEcid("Unable to create concierge request payload. ECID is nil.") }
         guard !configuration.surfaces.isEmpty else { throw ConciergeError.invalidSurfaces("Unable to create concierge request payload. No surfaces were provided.") }
@@ -198,15 +201,22 @@ class ConciergeChatService: NSObject {
             conversation[ConciergeConstants.Request.Keys.AuthData.DATA] = dataPart
         }
 
+        var xdm: [String: Any] = [
+            ConciergeConstants.Request.Keys.IDENTITY_MAP: identityMapPayload
+        ]
+        // Host-supplied handoff fields are shallow-merged alongside the SDK's own XDM. Collisions
+        // resolve in the SDK's favour so a caller can never displace `identityMap`.
+        if let extraXDMFields = extraXDMFields {
+            xdm.merge(extraXDMFields) { current, _ in current }
+        }
+
         let payload: [String: Any] = [
             ConciergeConstants.Request.Keys.EVENTS: [
                 [
                     ConciergeConstants.Request.Keys.QUERY: [
                         ConciergeConstants.Request.Keys.CONVERSATION: conversation
                     ],
-                    ConciergeConstants.Request.Keys.XDM: [
-                        ConciergeConstants.Request.Keys.IDENTITY_MAP: identityMapPayload
-                    ],
+                    ConciergeConstants.Request.Keys.XDM: xdm,
                     ConciergeConstants.Request.Keys.Consent.META: [
                         ConciergeConstants.Request.Keys.Consent.CONSENT: [
                             ConciergeConstants.Request.Keys.Consent.STATE: consentState

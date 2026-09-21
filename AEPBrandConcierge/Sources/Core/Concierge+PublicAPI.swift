@@ -54,9 +54,9 @@ public extension Concierge {
     /// Product Advisor), outside of normal user-typed chat - e.g. the result of a native checkout flow.
     ///
     /// - Parameters:
-    ///   - routingHint: A keyword consumed only by Brand Concierge's current phrase-based router
-    ///     (e.g. "successful-checkout") - the end user never sees it, and it is not conversational
-    ///     content.
+    ///   - routingHint: An optional keyword consumed by Brand Concierge's current phrase-based
+    ///     router (e.g. "successful-checkout"). An empty value is forwarded when the XDM fields
+    ///     provide sufficient routing context.
     ///   - xdmFields: Arbitrary XDM-shaped data merged into the root of the XDM object the SDK
     ///     forwards alongside the routing hint - an ordinary nested dictionary, e.g.
     ///     `["commerce": ["order": ["purchaseID": "123"]]]`. Must be non-empty, JSON-serializable
@@ -65,13 +65,16 @@ public extension Concierge {
     ///   - localMessage: Optional text to render immediately in the chat transcript as a local,
     ///     non-networked message. `nil`/empty -> nothing shown locally; the conversation only gets
     ///     whatever Product Advisor eventually replies with.
-    ///   - completion: Called with whether the SDK accepted the payload's shape, and (if rejected)
-    ///     why. Does not confirm delivery to Brand Concierge or Product Advisor.
+    ///   - completion: Called on the main actor after the handoff stream completes. Success means
+    ///     the Concierge service completed the stream; it does not imply a particular business
+    ///     action was performed by Brand Concierge or Product Advisor. If another turn is active,
+    ///     the callback receives `.chatInProgress` immediately; the app may retry after the chat
+    ///     returns to an idle state.
     static func sendDataHandoff(
         routingHint: String,
         xdmFields: [String: Any],
         localMessage: String? = nil,
-        completion: (@MainActor (_ accepted: Bool, _ rejectReason: ConciergeDataHandoffRejectReason?) -> Void)? = nil
+        completion: (@MainActor (Result<Void, ConciergeDataHandoffError>) -> Void)? = nil
     ) {
         let payload = ConciergeDataHandoffEvent(routingHint: routingHint, xdmFields: xdmFields, localMessage: localMessage)
         let event = Event(name: ConciergeConstants.EventName.DATA_HANDOFF,
@@ -79,13 +82,21 @@ public extension Concierge {
                           source: EventSource.requestContent,
                           data: [ConciergeConstants.DataHandoffEventData.Key.PAYLOAD: payload])
 
-        MobileCore.dispatch(event: event, timeout: ConciergeConstants.DEFAULT_TIMEOUT) { response in
+        MobileCore.dispatch(event: event, timeout: ConciergeConstants.Request.dataHandoffResponseTimeout) { response in
             guard let completion = completion else { return }
             let accepted = response?.data?[ConciergeConstants.DataHandoffEventData.Key.ACCEPTED] as? Bool ?? false
-            let rejectReasonRaw = response?.data?[ConciergeConstants.DataHandoffEventData.Key.REJECT_REASON] as? String
-            let rejectReason = rejectReasonRaw.flatMap(ConciergeDataHandoffRejectReason.init(rawValue:)) ?? (accepted ? nil : .noResponse)
+            let errorCode = response?.data?[ConciergeConstants.DataHandoffEventData.Key.ERROR_CODE] as? String
+            let errorMessage = response?.data?[ConciergeConstants.DataHandoffEventData.Key.ERROR_MESSAGE] as? String
+            let result: Result<Void, ConciergeDataHandoffError>
+            if accepted {
+                result = .success(())
+            } else if let errorCode, let error = ConciergeDataHandoffError(code: errorCode, message: errorMessage) {
+                result = .failure(error)
+            } else {
+                result = .failure(.noResponse)
+            }
             Task { @MainActor in
-                completion(accepted, rejectReason)
+                completion(result)
             }
         }
     }

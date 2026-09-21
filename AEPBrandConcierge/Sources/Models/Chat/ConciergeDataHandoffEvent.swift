@@ -19,8 +19,7 @@ import Foundation
 ///
 /// `routingHint` is a keyword consumed only by Brand Concierge's current phrase-based router
 /// (e.g. "successful-checkout") — the end user never sees it, and it is not conversational
-/// content. It may become optional once a more deterministic, XDM-field-based routing
-/// approach ships; both fields are required for now.
+/// content. It may be empty when routing is determined entirely from the XDM fields.
 ///
 /// `xdmFields` is merged directly into the root of the XDM object the SDK forwards alongside
 /// the routing hint — an ordinary nested dictionary, e.g.
@@ -45,22 +44,71 @@ struct ConciergeDataHandoffEvent {
     }
 }
 
-/// Why the SDK rejected a `Concierge.sendDataHandoff(...)` call, or (`.noResponse`) that no
-/// response arrived at all. Values are shared with the Android SDK's equivalent API for
-/// cross-platform consistency - keep the raw values in sync with
-/// `ConciergeConstants.DataHandoff.RejectReason` in aepsdk-concierge-android.
-public enum ConciergeDataHandoffRejectReason: String {
-    /// The SDK received no payload at all for this request - an internal wiring issue, not
-    /// something a caller of `sendDataHandoff` can trigger directly.
-    case missingEventData = "missing_event_data"
-    /// `routingHint` was empty (or blank).
-    case missingRoutingHint = "missing_routing_hint"
+/// Any error encountered while forwarding a `Concierge.sendDataHandoff(...)` call.
+public enum ConciergeDataHandoffError: Error, Equatable, LocalizedError {
+    /// The SDK received no payload at all for this request.
+    case missingEventData
     /// `xdmFields` was empty.
-    case emptyXdmFields = "empty_xdm_fields"
+    case emptyXdmFields
     /// `xdmFields` contained a value that isn't JSON-serializable.
-    case invalidXdmFieldValue = "invalid_xdm_field_value"
+    case invalidXdmFieldValue
     /// `xdmFields` used a reserved top-level key (e.g. `identityMap`).
-    case reservedKeyCollision = "reserved_key_collision"
+    case reservedKeyCollision
+    /// No Concierge chat session was active when the handoff was submitted.
+    case noActiveSession
+    /// Another Concierge chat turn is currently being processed. The handoff was not started and
+    /// nothing was rendered; the app may retry once the chat is no longer processing.
+    case chatInProgress
+    /// The chat service failed while forwarding the handoff.
+    case serviceFailure(String)
     /// The extension never responded (e.g. the call timed out).
-    case noResponse = "no_response"
+    case noResponse
+
+    var code: String {
+        switch self {
+        case .missingEventData: return "missing_event_data"
+        case .emptyXdmFields: return "empty_xdm_fields"
+        case .invalidXdmFieldValue: return "invalid_xdm_field_value"
+        case .reservedKeyCollision: return "reserved_key_collision"
+        case .noActiveSession: return "no_active_session"
+        case .chatInProgress: return "chat_in_progress"
+        case .serviceFailure: return "service_failure"
+        case .noResponse: return "no_response"
+        }
+    }
+
+    init?(code: String, message: String? = nil) {
+        switch code {
+        case "missing_event_data": self = .missingEventData
+        case "empty_xdm_fields": self = .emptyXdmFields
+        case "invalid_xdm_field_value": self = .invalidXdmFieldValue
+        case "reserved_key_collision": self = .reservedKeyCollision
+        case "no_active_session": self = .noActiveSession
+        case "chat_in_progress": self = .chatInProgress
+        case "service_failure": self = .serviceFailure(message ?? "The Concierge service failed.")
+        case "no_response": self = .noResponse
+        default: return nil
+        }
+    }
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingEventData:
+            return "The data handoff payload was missing or invalid."
+        case .emptyXdmFields:
+            return "The data handoff requires at least one XDM field."
+        case .invalidXdmFieldValue:
+            return "The data handoff contains a value that cannot be serialized as JSON."
+        case .reservedKeyCollision:
+            return "The data handoff cannot override the SDK-managed identity map."
+        case .noActiveSession:
+            return "Data handoff requires an active Concierge chat session."
+        case .chatInProgress:
+            return "Data handoff cannot start while another Concierge chat turn is in progress."
+        case .serviceFailure(let message):
+            return message
+        case .noResponse:
+            return "No response was received for the data handoff."
+        }
+    }
 }
