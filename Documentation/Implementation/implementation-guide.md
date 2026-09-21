@@ -241,6 +241,46 @@ Concierge.sendDataHandoff(
 
 ## Basic usage
 
+### Data handoff
+
+Use `Concierge.sendDataHandoff(...)` when an app flow such as checkout has native
+transaction data that should be forwarded into the existing Concierge conversation:
+
+```swift
+Concierge.sendDataHandoff(
+    routingHint: "successful-checkout",
+    xdmFields: [
+        "commerce": [
+            "order": [
+                "purchaseID": order.id
+            ]
+        ]
+    ],
+    localMessage: "Your order is confirmed!"
+) { result in
+    switch result {
+    case .success:
+        break
+    case .failure(let error):
+        print(error.localizedDescription)
+    }
+}
+```
+
+The handoff requires an active Concierge session, but the chat does not need to be
+visible while the app is collecting checkout data. The checkout screen can be
+dismissed after submitting the handoff so the existing Concierge session displays
+the local message and the streamed Brand Concierge/Product Advisor response.
+
+The callback completes after the forwarding stream finishes, reporting either the
+delivered response or the first error encountered along the way. A handoff submitted
+while another chat turn is still processing is rejected immediately with
+`ConciergeDataHandoffError.chatInProgress`; the SDK does not queue or retain it, and
+nothing is rendered for the rejected handoff — not even `localMessage`. The host app
+owns the retry and can resubmit the same handoff once the in-flight turn finishes,
+whether it succeeded or failed. An empty `routingHint` is allowed when the XDM fields
+provide the necessary routing context.
+
 ### API reference
 
 Brand Concierge requires a list of **surface identifiers** to resolve the correct chat configuration on the BC server. Every chat session is started with surfaces, either directly via `show(...)` / `present(on:...)` or, when using the built-in floating button, via the value stored by `wrap(...)`.
