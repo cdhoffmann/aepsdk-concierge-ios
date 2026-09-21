@@ -103,6 +103,7 @@
 		24CC5AB72F11CF2800484C0B /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24CC5AB62F11CF2800484C0B /* SessionManager.swift */; };
 		2907A6419462F5F908EAF7F9 /* MessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5EE8AC6DB678C5F5BEA41F8 /* MessageTests.swift */; };
 		3523A0148F1C41662548C065 /* BuyNowMockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4274A7A6D620553F44A2B4CD /* BuyNowMockView.swift */; };
+		41DAE6E472994C298C2E140A /* CheckoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F083DD30445434A872EF78A /* CheckoutView.swift */; };
 		3743A0FEC974D8BF598ACBBE /* BasicMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE4EA5F0D817FDEC1A8F6695 /* BasicMessageView.swift */; };
 		3BC69E9C64052B6BBCA4AE99 /* ProductDetailCardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21378B0B68D3623005C3C79 /* ProductDetailCardViewTests.swift */; };
 		44D3D2BA6FCA570474FBD2B5 /* GeoURLConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9E7DD31CC1B008B43BF0F97 /* GeoURLConverter.swift */; };
@@ -335,6 +336,7 @@
 		2A8803C559E307362EE94BF3 /* Pods-AEPBrandConciergeTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AEPBrandConciergeTests.release.xcconfig"; path = "Target Support Files/Pods-AEPBrandConciergeTests/Pods-AEPBrandConciergeTests.release.xcconfig"; sourceTree = "<group>"; };
 		2B07E78363AE9961331E4702 /* ConciergeAuthTokenResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConciergeAuthTokenResolver.swift; sourceTree = "<group>"; };
 		4274A7A6D620553F44A2B4CD /* BuyNowMockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuyNowMockView.swift; sourceTree = "<group>"; };
+		1F083DD30445434A872EF78A /* CheckoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutView.swift; sourceTree = "<group>"; };
 		49180BEE1E2A4439AC75F403 /* ConciergeCardTapHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConciergeCardTapHandler.swift; sourceTree = "<group>"; };
 		4C1738102E67C590003E88AF /* SourcesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourcesListView.swift; sourceTree = "<group>"; };
 		4C1738142E67D59D003E88AF /* SourceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceRowView.swift; sourceTree = "<group>"; };
@@ -711,6 +713,7 @@
 				8A2D5C5ADB7CBBE5444DC5F7 /* BuyNowMockURLProtocol.swift */,
 				908306C0ADD3A3C6A0992252 /* TestingHubView.swift */,
 				4274A7A6D620553F44A2B4CD /* BuyNowMockView.swift */,
+				1F083DD30445434A872EF78A /* CheckoutView.swift */,
 				4CC11B2B2F68FAD300EEF226 /* LinkHandlingTestView.swift */,
 				4CC11B2F2F69312B00EEF226 /* LinkTestView.swift */,
 				4C3A65D42E55446600EEEF3B /* UIKitDemoViewController.swift */,
@@ -1381,6 +1384,7 @@
 				0E15473412FE7A5DABC68751 /* BuyNowMockURLProtocol.swift in Sources */,
 				D680B287B96F87A9860DFCD4 /* TestingHubView.swift in Sources */,
 				3523A0148F1C41662548C065 /* BuyNowMockView.swift in Sources */,
+				41DAE6E472994C298C2E140A /* CheckoutView.swift in Sources */,
 				4C3A65D52E55446600EEEF3B /* UIKitDemoViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
