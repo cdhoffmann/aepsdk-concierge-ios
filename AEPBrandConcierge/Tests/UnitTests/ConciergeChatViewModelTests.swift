@@ -894,6 +894,105 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertEqual(events.first?.data?[ConciergeConstants.TrackingEvent.EventData.Key.URL] as? String, "https://example.com/terms")
     }
 
+    // Feedback identityMap Forwarding Tests
+
+    /// Appends a completed message with a payload so `sendFeedbackFor` can act on it; returns its id.
+    private func appendFeedbackEligibleMessage(to controller: ChatController, conversationId: String = "conv-1", interactionId: String = "int-1") -> UUID {
+        let message = Message(
+            template: .basic(isUserMessage: false),
+            messageBody: "Hello",
+            feedbackEligible: true,
+            payload: makePayload(state: ConciergeConstants.StreamState.COMPLETED, message: "Hello", conversationId: conversationId, interactionId: interactionId)
+        )
+        controller.messages.append(message)
+        return message.id
+    }
+
+    func test_sendFeedbackFor_withFullIdentityMap_forwardsAllNamespacesVerbatim() {
+        let identityMap: [String: Any] = [
+            "ECID": [["id": "ecid-1", "authenticatedState": "ambiguous", "primary": false]],
+            "hashedEmail": [["id": "hashed-email-1", "authenticatedState": "authenticated", "primary": true]],
+            "CRMID": [["id": "crm-1"]]
+        ]
+        let configuration = ConciergeConfiguration(ecid: "ecid-1", identityMap: identityMap, surfaces: ["web://test"])
+        let fakeService = MockChatService(configuration: configuration)
+        let controller = makeController(configuration: configuration, service: fakeService)
+        let messageId = appendFeedbackEligibleMessage(to: controller)
+
+        controller.sendFeedbackFor(messageId: messageId, with: FeedbackPayload(sentiment: .positive, selectedOptions: [], notes: ""))
+        spinUntil(fakeService.sendFeedbackCallCount == 1)
+
+        let xdm = fakeService.lastFeedbackData?[ConciergeConstants.Request.Keys.XDM] as? [String: Any]
+        let forwardedIdentityMap = xdm?[ConciergeConstants.Request.Keys.IDENTITY_MAP] as? [String: Any]
+        XCTAssertNotNil(forwardedIdentityMap)
+
+        let ecidEntries = forwardedIdentityMap?["ECID"] as? [[String: Any]]
+        XCTAssertEqual(ecidEntries?.first?["id"] as? String, "ecid-1")
+        XCTAssertEqual(ecidEntries?.first?["authenticatedState"] as? String, "ambiguous")
+        XCTAssertEqual(ecidEntries?.first?["primary"] as? Bool, false)
+
+        let hashedEmailEntries = forwardedIdentityMap?["hashedEmail"] as? [[String: Any]]
+        XCTAssertEqual(hashedEmailEntries?.first?["id"] as? String, "hashed-email-1")
+        XCTAssertEqual(hashedEmailEntries?.first?["authenticatedState"] as? String, "authenticated")
+        XCTAssertEqual(hashedEmailEntries?.first?["primary"] as? Bool, true)
+
+        let crmEntries = forwardedIdentityMap?["CRMID"] as? [[String: Any]]
+        XCTAssertEqual(crmEntries?.first?["id"] as? String, "crm-1")
+    }
+
+    func test_sendFeedbackFor_withEcidOnlyIdentityMap_stillForwardsEcid() {
+        // Regression: ECID-only identityMap (as before this change) still reaches the endpoint
+        let identityMap: [String: Any] = ["ECID": [["id": "ecid-1"]]]
+        let configuration = ConciergeConfiguration(ecid: "ecid-1", identityMap: identityMap, surfaces: ["web://test"])
+        let fakeService = MockChatService(configuration: configuration)
+        let controller = makeController(configuration: configuration, service: fakeService)
+        let messageId = appendFeedbackEligibleMessage(to: controller)
+
+        controller.sendFeedbackFor(messageId: messageId, with: FeedbackPayload(sentiment: .negative, selectedOptions: [], notes: ""))
+        spinUntil(fakeService.sendFeedbackCallCount == 1)
+
+        let xdm = fakeService.lastFeedbackData?[ConciergeConstants.Request.Keys.XDM] as? [String: Any]
+        let forwardedIdentityMap = xdm?[ConciergeConstants.Request.Keys.IDENTITY_MAP] as? [String: Any]
+        let ecidEntries = forwardedIdentityMap?["ECID"] as? [[String: Any]]
+        XCTAssertEqual(ecidEntries?.first?["id"] as? String, "ecid-1")
+    }
+
+    func test_sendFeedbackFor_withNilIdentityMap_fallsBackToEcidOnlyMap() {
+        // Given
+        let configuration = ConciergeConfiguration(ecid: "ecid-1", identityMap: nil, surfaces: ["web://test"])
+        let fakeService = MockChatService(configuration: configuration)
+        let controller = makeController(configuration: configuration, service: fakeService)
+        let messageId = appendFeedbackEligibleMessage(to: controller)
+
+        controller.sendFeedbackFor(messageId: messageId, with: FeedbackPayload(sentiment: .positive, selectedOptions: [], notes: ""))
+        spinUntil(fakeService.sendFeedbackCallCount == 1)
+
+        let xdm = fakeService.lastFeedbackData?[ConciergeConstants.Request.Keys.XDM] as? [String: Any]
+        let forwardedIdentityMap = xdm?[ConciergeConstants.Request.Keys.IDENTITY_MAP] as? [String: Any]
+
+        // Then
+        let ecidEntries = forwardedIdentityMap?["ECID"] as? [[String: Any]]
+        XCTAssertEqual(ecidEntries?.first?["id"] as? String, "ecid-1")
+    }
+
+    func test_sendFeedbackFor_withUnserializableIdentityMap_fallsBackToEcidOnlyMap() {
+        // Given: identityMap contains a value JSONSerialization can't encode (NaN)
+        let configuration = ConciergeConfiguration(ecid: "ecid-1", identityMap: ["ECID": Double.nan], surfaces: ["web://test"])
+        let fakeService = MockChatService(configuration: configuration)
+        let controller = makeController(configuration: configuration, service: fakeService)
+        let messageId = appendFeedbackEligibleMessage(to: controller)
+
+        controller.sendFeedbackFor(messageId: messageId, with: FeedbackPayload(sentiment: .positive, selectedOptions: [], notes: ""))
+        spinUntil(fakeService.sendFeedbackCallCount == 1)
+
+        let xdm = fakeService.lastFeedbackData?[ConciergeConstants.Request.Keys.XDM] as? [String: Any]
+        let forwardedIdentityMap = xdm?[ConciergeConstants.Request.Keys.IDENTITY_MAP] as? [String: Any]
+
+        // Then
+        let ecidEntries = forwardedIdentityMap?["ECID"] as? [[String: Any]]
+        XCTAssertEqual(ecidEntries?.first?["id"] as? String, "ecid-1")
+    }
+
     // MARK: - Helpers
     private func makeController(configuration: ConciergeConfiguration, service: MockChatService, capturer: MockSpeechCapturer? = nil, dispatch: ((_ event: Event) -> Void)? = nil) -> ChatController {
         ChatController(configuration: configuration, chatService: service, speechCapturer: capturer, speaker: NoopSpeaker(), dispatch: dispatch)
