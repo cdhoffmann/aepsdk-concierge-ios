@@ -660,7 +660,7 @@ final class ChatController: ObservableObject {
                         if streamingMessageIndex < self.messages.count {
                             var current = self.messages[streamingMessageIndex]
                             current.messageBody = accumulatedContent
-                            current.shouldSpeakMessage = true
+                            current.shouldSpeakMessage = !accumulatedContent.isEmpty
                             if !self.latestSources.isEmpty {
                                 Log.trace(label: self.LOG_TAG, "Using sources: count=\(self.latestSources.count)")
                                 current.sources = self.latestSources
@@ -673,6 +673,14 @@ final class ChatController: ObservableObject {
                             current.isStreamComplete = true
                             self.messages[streamingMessageIndex] = current
                             completedPayload = current.payload
+
+                            // A response can carry cards with no accompanying text (a handoff that
+                            // returns only product recommendations is the common case). Leaving the
+                            // placeholder behind would render an empty agent bubble above them, so
+                            // drop it - the payload has already been captured for tracking.
+                            if accumulatedContent.isEmpty && !latestElements.isEmpty {
+                                self.messages.remove(at: streamingMessageIndex)
+                            }
                         }
 
                         guard let completedPayload else {

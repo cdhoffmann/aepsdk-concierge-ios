@@ -1082,6 +1082,35 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertEqual(completedCount, 1, "responseCompleted should remain paired with responseStarted")
     }
 
+    /// A cards-only response has nothing to put in the streaming text bubble, so that placeholder
+    /// must be dropped rather than left behind as an empty agent message above the carousel.
+    func test_streaming_cards_only_leavesNoEmptyTextBubble() {
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        let element = makeProductElement(id: "prod-1", name: "Widget Pro", price: "$9.99")
+        fakeService.plannedChunks = [
+            makePayloadWithProducts(state: ConciergeConstants.StreamState.COMPLETED, elements: [element], message: nil)
+        ]
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService)
+
+        controller.applyTextChange("show cards")
+        controller.sendMessage(isUser: true)
+        spinUntil(controller.chatState == .idle)
+
+        let emptyAgentBubbles = controller.messages.filter { message in
+            guard case .basic(let isUserMessage) = message.template, !isUserMessage else { return false }
+            return (message.messageBody ?? "").isEmpty
+        }
+        XCTAssertTrue(emptyAgentBubbles.isEmpty,
+                      "Expected no empty agent bubble for a cards-only response, found \(emptyAgentBubbles.count)")
+
+        let hasCard = controller.messages.contains { message in
+            if case .productCard = message.template { return true }
+            if case .carouselGroup = message.template { return true }
+            return false
+        }
+        XCTAssertTrue(hasCard, "The cards themselves must still be rendered")
+    }
+
     func test_trackPromptSuggestionClicked_dispatches_event() {
         var dispatchedEvents: [Event] = []
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
