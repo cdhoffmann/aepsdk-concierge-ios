@@ -256,6 +256,13 @@ struct ContentView: View {
         // The chat is deliberately left open behind the sheet so the forwarded turn is visible the
         // moment checkout finishes.
         if url.host == "buy-now", let product = CheckoutProduct(buyNowURL: url) {
+            // A second "Buy now" tapped during the sheet's dismissal animation would overwrite
+            // `pendingCheckout` and reset `checkoutWasCompleted` *before* `onDismiss` runs for the
+            // first one - reporting the previous outcome against the newly tapped product. Ignore
+            // taps until the in-flight checkout has been finalized; the SDK would reject the
+            // overlapping handoff with `.chatInProgress` anyway.
+            guard pendingCheckout == nil else { return true }
+
             pendingCheckout = product
             checkoutWasCompleted = false
             checkoutProduct = product
