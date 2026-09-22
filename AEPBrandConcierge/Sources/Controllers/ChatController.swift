@@ -314,7 +314,7 @@ final class ChatController: ObservableObject {
 
         chatState = .processing
         armHandoffTimeouts(completion)
-        streamAgentResponse(for: routingHint, extraXDMFields: xdmFields) { [weak self] error in
+        streamAgentResponse(for: routingHint, extraXDMFields: xdmFields, rendersFailures: false) { [weak self] error in
             self?.finishHandoff(error)
         }
 
@@ -572,8 +572,13 @@ final class ChatController: ObservableObject {
         }
     }
 
+    /// - Parameter rendersFailures: Whether a failed turn leaves a notice in the transcript. True
+    ///   for a turn the user typed, since they are waiting on a visible answer. False for a data
+    ///   handoff: the user never asked for it and may not know one was sent, so an error bubble
+    ///   would appear unprompted. The failure still reaches the app through `completion`.
     private func streamAgentResponse(for query: String,
                                      extraXDMFields: [String: Any]? = nil,
+                                     rendersFailures: Bool = true,
                                      completion: ((ConciergeError?) -> Void)? = nil) {
         let streamingMessageIndex = messages.count
         messages.append(Message(template: .basic(isUserMessage: false), messageBody: ""))
@@ -705,8 +710,10 @@ final class ChatController: ObservableObject {
                         // idle. Parking in `.error` would deadlock the chat - `sendMessage`,
                         // `sendEnabled`, and `micEnabled` all require `.idle`, and the only path
                         // back to `.idle` runs inside a turn those guards prevent from starting.
-                        self.messages.append(Message(template: .basic(isUserMessage: false),
-                                                     messageBody: self.networkErrorMessage))
+                        if rendersFailures {
+                            self.messages.append(Message(template: .basic(isUserMessage: false),
+                                                         messageBody: self.networkErrorMessage))
+                        }
 
                         self.clearState()
                     } else if accumulatedContent.isEmpty && latestElements.isEmpty {
@@ -716,7 +723,9 @@ final class ChatController: ObservableObject {
                             self.messages.remove(at: streamingMessageIndex)
                         }
 
-                        self.messages.append(Message(template: .basic(isUserMessage: false), messageBody: "Sorry, I wasn't able to get a response from the Concierge Service. \n\nPlease try again later."))
+                        if rendersFailures {
+                            self.messages.append(Message(template: .basic(isUserMessage: false), messageBody: "Sorry, I wasn't able to get a response from the Concierge Service. \n\nPlease try again later."))
+                        }
 
                         self.clearState()
                     } else {

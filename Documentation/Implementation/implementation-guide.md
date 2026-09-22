@@ -238,16 +238,21 @@ Concierge.sendDataHandoff(
   | `chatInProgress` | `chat_in_progress` | Another turn is already being processed. Nothing was started or rendered; retry once the chat is idle. |
   | `deliveryFailed(String?)` | `delivery_failed` | Brand Concierge returned an error or the request couldn't be completed. Carries the underlying service detail when available. |
   | `emptyResponse` | `empty_response` | The stream completed with no renderable content. |
-  | `deliveryTimeout` | `delivery_timeout` | The backend produced no response at all within 10 seconds, or the turn ran past its 60-second ceiling. A turn that is actively streaming is never cut off at the 10-second mark, so a slow-but-healthy reply still renders. The in-flight request is cancelled and the transcript shows the failure, so a retry starts a clean turn rather than racing the original. Distinct from `deliveryFailed` so a slow turn can be retried without retrying a rejected one. |
+  | `deliveryTimeout` | `delivery_timeout` | The backend produced no response at all within 10 seconds, or the turn ran past its 60-second ceiling. A turn that is actively streaming is never cut off at the 10-second mark, so a slow-but-healthy reply still renders. The in-flight request is cancelled, so a retry starts a clean turn rather than racing the original. Distinct from `deliveryFailed` so a slow turn can be retried without retrying a rejected one. |
   | `noResponse` | `no_response` | The extension itself never responded — an internal failure, distinct from the backend timing out, which reports `deliveryTimeout`. |
 
   `code` is a public, stable identifier intended for analytics and crash reporting, so an app can
   report a failure without switching over every case. They are a stable contract and will not
   change for an existing case.
 
-  A failed handoff is rendered in the chat transcript the same way a failed user turn is, and the
-  chat returns to idle. An app should generally **not** present its own error UI on `.failure`, or
-  the user sees the failure reported twice.
+  A failed handoff leaves **nothing** in the chat transcript: the streaming placeholder is removed
+  and the chat returns to idle. A handoff is initiated by app code, not by the user, so an error
+  bubble would appear unprompted for something the user never asked for. Any `localMessage` already
+  rendered stays, since the user has seen it.
+
+  This means the app owns the failure UX. If a failed handoff needs to be visible, present it in
+  app UI on `.failure` - the SDK will not show it. (This is the inverse of a user-typed turn, where
+  the SDK does render the failure because the user is waiting on a visible answer.)
 
 ---
 

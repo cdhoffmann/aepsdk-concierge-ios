@@ -71,6 +71,9 @@ public extension Concierge {
     ///     completed the stream; it does not imply a particular business action was performed by
     ///     Brand Concierge or Product Advisor. If another turn is active, the callback receives
     ///     `.chatInProgress` immediately; the app may retry after the chat returns to an idle state.
+    ///
+    ///     A failure leaves nothing in the transcript - the user never asked for this turn, so the
+    ///     SDK does not render an error for it. The app owns the failure UX.
     static func sendDataHandoff(
         routingHint: String = "",
         xdmFields: [String: Any],

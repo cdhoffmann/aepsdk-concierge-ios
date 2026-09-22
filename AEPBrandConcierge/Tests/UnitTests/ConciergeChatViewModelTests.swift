@@ -583,6 +583,44 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertNil(completions.first ?? nil, "the slow turn ultimately succeeded")
     }
 
+    func test_failedHandoff_leavesNothingInTheTranscript() {
+        // A handoff is initiated by app code, not the user, so a failure must not put an error
+        // bubble in front of someone who never asked for the turn. The app hears about it through
+        // the completion instead. Inverse of a user-typed turn, which does render its failure.
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.plannedChunks = []
+        fakeService.plannedError = .unreachable
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService)
+        controller.networkErrorMessage = "Themed connection error"
+
+        var completions: [ConciergeError?] = []
+        _ = controller.handleDataHandoff(routingHint: "checkout", xdmFields: [:]) { completions.append($0) }
+
+        spinUntil(controller.chatState == .idle)
+
+        XCTAssertTrue(controller.messages.isEmpty,
+                      "a failed handoff must leave no trace, not even the streaming placeholder")
+        XCTAssertEqual(completions.count, 1, "the app must still be told the handoff failed")
+        XCTAssertNotNil(completions.first ?? nil)
+    }
+
+    func test_failedHandoff_keepsAnAlreadyRenderedLocalMessage() {
+        // The local message is the one part the user has already seen, so removing it on failure
+        // would make content vanish from under them.
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.plannedChunks = []
+        fakeService.plannedError = .unreachable
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService)
+
+        _ = controller.handleDataHandoff(routingHint: "checkout", xdmFields: [:],
+                                         localMessage: "Your order is confirmed!")
+
+        spinUntil(controller.chatState == .idle)
+
+        XCTAssertEqual(controller.messages.count, 1, "only the local message should remain")
+        XCTAssertEqual(controller.messages.first?.messageBody, "Your order is confirmed!")
+    }
+
     func test_handoffWithNoCompletion_isStillCapped() {
         // Regression: the caps were keyed off `handoffCompletion`, so a caller that passed no
         // completion armed them and then had every fire no-op - parking the chat in `.processing`
