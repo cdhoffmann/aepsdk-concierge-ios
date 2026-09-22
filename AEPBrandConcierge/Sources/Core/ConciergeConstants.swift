@@ -103,12 +103,25 @@ public enum ConciergeConstants {
         static let READ_TIMEOUT = 15.0
         static let HTTPS = "https://"
 
-        /// Wall-clock cap on a single data handoff turn, enforced by `ChatController`.
+        /// How long a handoff turn may go without producing *any* response before it's abandoned.
+        ///
+        /// Catches the common hang - a backend that never answers - and fails fast, since there's
+        /// nothing to lose by cancelling a turn that has produced nothing. Disarmed by
+        /// `ChatController` on the first chunk.
+        ///
+        /// Kept below `READ_TIMEOUT` on purpose: a handoff is triggered from app UI (a checkout
+        /// screen), where a prompt failure the app can act on beats a long silent wait.
+        static let DATA_HANDOFF_FIRST_CHUNK_TIMEOUT = 10.0
+
+        /// Hard ceiling on a single data handoff turn, enforced by `ChatController`.
         ///
         /// `READ_TIMEOUT` can't serve this purpose: it's `URLRequest.timeoutInterval`, an
         /// *inactivity* timeout, so a turn that keeps chunking steadily runs indefinitely without
-        /// tripping it. This is the hard ceiling that makes `sendDataHandoff`'s completion a
-        /// promise - the callback always fires within this window, one way or the other.
+        /// tripping it. This is what makes `sendDataHandoff`'s completion a promise.
+        ///
+        /// Deliberately generous. Once a turn is streaming, cancelling it throws away a reply the
+        /// user was about to see, so this only exists to bound the callback - the fast failure
+        /// case is already covered by `DATA_HANDOFF_FIRST_CHUNK_TIMEOUT`.
         static let DATA_HANDOFF_TURN_TIMEOUT = 60.0
 
         /// Slack between the controller's cap and the event hub's timer, so the controller always

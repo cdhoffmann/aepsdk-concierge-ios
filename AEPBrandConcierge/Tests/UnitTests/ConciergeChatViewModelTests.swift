@@ -506,9 +506,16 @@ final class ChatControllerTests: XCTestCase {
                              ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT,
                              "the controller must always report the outcome before the hub gives up")
 
+        XCTAssertLessThan(ConciergeConstants.Request.DATA_HANDOFF_FIRST_CHUNK_TIMEOUT,
+                          ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT,
+                          "the fast cap must fire before the hard ceiling")
+
+        // The ceiling has to outlast a healthy streaming turn, or it cancels replies the user was
+        // about to see. `READ_TIMEOUT` is the tolerated gap between *individual* chunks, and one
+        // turn can contain several.
         XCTAssertGreaterThan(ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT,
                              ConciergeConstants.Request.READ_TIMEOUT,
-                             "the wall-clock cap must outlast the network inactivity timeout")
+                             "the ceiling must outlast the per-chunk inactivity timeout")
 
         // The budget is a fixed cap now, so a configured auth-token window cannot move it.
         ConciergeAuthTokenResolver.shared.setProvider(nil)
@@ -521,14 +528,14 @@ final class ChatControllerTests: XCTestCase {
                        "the response budget must not depend on the auth-token configuration")
     }
 
-    func test_handoffThatNeverCompletes_reportsTimeoutAndUnwindsTheTurn() {
+    func test_handoffThatNeverResponds_reportsTimeoutAndUnwindsTheTurn() {
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
         fakeService.shouldCallComplete = false
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
-                                        handoffTurnTimeout: 0.2)
+                                        handoffTurnTimeout: 5.0, handoffFirstChunkTimeout: 0.2)
 
         var completions: [ConciergeError?] = []
-        let started = controller.handleDataHandoff(routingHint: "stalled-turn", xdmFields: [:]) { error in
+        let started = controller.handleDataHandoff(routingHint: "silent-turn", xdmFields: [:]) { error in
             completions.append(error)
         }
         XCTAssertTrue(started)
@@ -537,10 +544,10 @@ final class ChatControllerTests: XCTestCase {
 
         XCTAssertEqual(completions.count, 1, "the caller must hear back exactly once")
         guard case .timeout = completions.first ?? nil else {
-            return XCTFail("a stalled turn must report .timeout, got \(String(describing: completions.first ?? nil))")
+            return XCTFail("a silent turn must report .timeout, got \(String(describing: completions.first ?? nil))")
         }
         XCTAssertEqual(fakeService.cancelActiveStreamCallCount, 1,
-                       "the stalled request must be cancelled, not left running")
+                       "a turn that produced nothing must be cancelled, not left running")
 
         // Cancelling drives the delegate's failure path, which tries to complete a second time.
         spinUntil(timeout: 1.0, controller.chatState == .idle)
@@ -548,10 +555,38 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertEqual(controller.chatState, .idle, "a timed-out turn must leave the chat usable")
     }
 
-    func test_handoffThatCompletesInTime_disarmsTheTimeoutCap() {
+    func test_slowButStreamingHandoff_survivesTheFirstChunkCap() {
+        // The point of the two-stage design: a backend that is slow but alive must not have its
+        // reply thrown away. Only a turn that produces *nothing* fails fast.
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.shouldCallComplete = false
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
+                                        handoffTurnTimeout: 5.0, handoffFirstChunkTimeout: 0.3)
+
+        var completions: [ConciergeError?] = []
+        _ = controller.handleDataHandoff(routingHint: "slow-turn", xdmFields: [:]) { error in
+            completions.append(error)
+        }
+
+        spinUntil(timeout: 1.0, fakeService.streamChatCallCount == 1)
+        fakeService.emitChunk(makePayload(state: "in-progress", message: "thinking"))
+
+        // Outlive the first-chunk cap: the turn is alive, so nothing should fire.
+        spinUntil(timeout: 0.8, false)
+        XCTAssertTrue(completions.isEmpty, "a streaming turn must not be cut off by the fast cap")
+        XCTAssertEqual(fakeService.cancelActiveStreamCallCount, 0,
+                       "a streaming turn must never be cancelled by the fast cap")
+
+        fakeService.triggerCompletion()
+        spinUntil(!completions.isEmpty)
+        XCTAssertEqual(completions.count, 1)
+        XCTAssertNil(completions.first ?? nil, "the slow turn ultimately succeeded")
+    }
+
+    func test_handoffThatCompletesInTime_disarmsBothCaps() {
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
-                                        handoffTurnTimeout: 0.2)
+                                        handoffTurnTimeout: 0.3, handoffFirstChunkTimeout: 0.2)
 
         var completions: [ConciergeError?] = []
         _ = controller.handleDataHandoff(routingHint: "prompt-turn", xdmFields: [:]) { error in
@@ -561,9 +596,9 @@ final class ChatControllerTests: XCTestCase {
         spinUntil(!completions.isEmpty)
         XCTAssertEqual(completions.count, 1)
 
-        // Outlive the cap: a disarmed timer must not fire a second, spurious completion.
-        spinUntil(timeout: 0.6, false)
-        XCTAssertEqual(completions.count, 1, "the cap must be disarmed once the turn completes")
+        // Outlive both caps: a disarmed timer must not fire a second, spurious completion.
+        spinUntil(timeout: 0.8, false)
+        XCTAssertEqual(completions.count, 1, "the caps must be disarmed once the turn completes")
         XCTAssertEqual(fakeService.cancelActiveStreamCallCount, 0,
                        "a turn that finished on time must not be cancelled")
     }
@@ -1464,8 +1499,8 @@ final class ChatControllerTests: XCTestCase {
     }
 
     // MARK: - Helpers
-    private func makeController(configuration: ConciergeConfiguration, service: MockChatService, capturer: MockSpeechCapturer? = nil, dispatch: ((_ event: Event) -> Void)? = nil, handoffTurnTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT) -> ChatController {
-        ChatController(configuration: configuration, chatService: service, speechCapturer: capturer, speaker: NoopSpeaker(), dispatch: dispatch, handoffTurnTimeout: handoffTurnTimeout)
+    private func makeController(configuration: ConciergeConfiguration, service: MockChatService, capturer: MockSpeechCapturer? = nil, dispatch: ((_ event: Event) -> Void)? = nil, handoffTurnTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT, handoffFirstChunkTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_FIRST_CHUNK_TIMEOUT) -> ChatController {
+        ChatController(configuration: configuration, chatService: service, speechCapturer: capturer, speaker: NoopSpeaker(), dispatch: dispatch, handoffTurnTimeout: handoffTurnTimeout, handoffFirstChunkTimeout: handoffFirstChunkTimeout)
     }
 
     private func makePayload(state: String, message: String? = nil, sources: [Source]? = nil, conversationId: String? = nil, interactionId: String? = nil) -> ConversationPayload {

@@ -57,9 +57,11 @@ final class ChatController: ObservableObject {
     /// The in-flight handoff's completion and its wall-clock cap. A single pair is enough: the
     /// `chatState != .processing` guard admits only one handoff turn at a time.
     private var handoffCompletion: ((ConciergeError?) -> Void)?
-    private var handoffTimeoutWorkItem: DispatchWorkItem?
+    private var firstChunkWorkItem: DispatchWorkItem?
+    private var turnWorkItem: DispatchWorkItem?
 
-    /// Injectable so tests can exercise the cap without waiting out the production value.
+    /// Injectable so tests can exercise the caps without waiting out the production values.
+    private let handoffFirstChunkTimeout: TimeInterval
     private let handoffTurnTimeout: TimeInterval
 
     private var latestSources: [Source] = []
@@ -99,6 +101,7 @@ final class ChatController: ObservableObject {
         self.speechController = SpeechController(capturer: speechCapturer, speaker: speaker)
         self.dispatch = dispatch
         self.handoffTurnTimeout = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT
+        self.handoffFirstChunkTimeout = ConciergeConstants.Request.DATA_HANDOFF_FIRST_CHUNK_TIMEOUT
 
         configureSpeech()
         observeComposerState()
@@ -106,12 +109,13 @@ final class ChatController: ObservableObject {
 
     #if DEBUG
     // Internal for testing only
-    init(configuration: ConciergeConfiguration?, chatService: ConciergeChatService, speechCapturer: SpeechCapturing?, speaker: TextSpeaking?, dispatch: ((_ event: Event) -> Void)? = nil, handoffTurnTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT) {
+    init(configuration: ConciergeConfiguration?, chatService: ConciergeChatService, speechCapturer: SpeechCapturing?, speaker: TextSpeaking?, dispatch: ((_ event: Event) -> Void)? = nil, handoffTurnTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT, handoffFirstChunkTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_FIRST_CHUNK_TIMEOUT) {
         self.configuration = configuration
         self.chatService = chatService
         self.speechController = SpeechController(capturer: speechCapturer, speaker: speaker)
         self.dispatch = dispatch
         self.handoffTurnTimeout = handoffTurnTimeout
+        self.handoffFirstChunkTimeout = handoffFirstChunkTimeout
 
         configureSpeech()
         observeComposerState()
@@ -304,7 +308,7 @@ final class ChatController: ObservableObject {
         }
 
         chatState = .processing
-        armHandoffTimeout(completion)
+        armHandoffTimeouts(completion)
         streamAgentResponse(for: routingHint, extraXDMFields: xdmFields) { [weak self] error in
             self?.finishHandoff(error)
         }
@@ -317,19 +321,30 @@ final class ChatController: ObservableObject {
         return true
     }
 
-    /// Arms the wall-clock cap for a handoff turn.
+    /// Arms the two caps that bound a handoff turn.
     ///
-    /// The network layer's `READ_TIMEOUT` is an inactivity timeout, so a turn that keeps chunking
-    /// steadily never trips it. Without this cap a long-but-healthy turn would outlive the event
-    /// hub's timer, and the app would be told `.noResponse` while the answer rendered fine.
-    private func armHandoffTimeout(_ completion: ((ConciergeError?) -> Void)?) {
+    /// They answer different failure modes. The first-chunk cap catches a backend that never
+    /// responds at all, which is the common hang and worth failing fast on. The turn cap is the
+    /// hard ceiling that makes `sendDataHandoff`'s completion a promise; it has to stay generous,
+    /// because cancelling a turn that is actively streaming throws away a reply the user was about
+    /// to see. Without the ceiling the event hub's timer would become the de-facto bound, which is
+    /// what produced the original mismatch: a long-but-healthy turn rendered while the app was
+    /// told it had failed.
+    private func armHandoffTimeouts(_ completion: ((ConciergeError?) -> Void)?) {
         handoffCompletion = completion
 
+        firstChunkWorkItem = scheduleHandoffTimeout(after: handoffFirstChunkTimeout,
+                                                    reason: "produced no response")
+        turnWorkItem = scheduleHandoffTimeout(after: handoffTurnTimeout,
+                                              reason: "exceeded its wall-clock cap")
+    }
+
+    private func scheduleHandoffTimeout(after interval: TimeInterval, reason: String) -> DispatchWorkItem {
         let workItem = DispatchWorkItem {
             Task { @MainActor [weak self] in
                 guard let self = self, self.handoffCompletion != nil else { return }
-                Log.warning(label: self.LOG_TAG, "Data handoff turn exceeded its wall-clock timeout.")
-                self.finishHandoff(.timeout(Int(self.handoffTurnTimeout)))
+                Log.warning(label: self.LOG_TAG, "Data handoff turn \(reason).")
+                self.finishHandoff(.timeout(Int(interval)))
 
                 // Reported first, then cancelled: the cancellation reaches the delegate as an
                 // ordinary failure, which unwinds the transcript and chat state through the
@@ -338,14 +353,24 @@ final class ChatController: ObservableObject {
                 self.chatService.cancelActiveStream()
             }
         }
-        handoffTimeoutWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + handoffTurnTimeout, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: workItem)
+        return workItem
     }
 
-    /// Reports a handoff outcome to its caller exactly once and disarms the cap.
+    /// Disarms the first-chunk cap once the service starts streaming. The turn cap stays armed.
+    ///
+    /// No-ops for an ordinary typed turn, which has no handoff caller waiting on it.
+    private func noteHandoffChunkReceived() {
+        firstChunkWorkItem?.cancel()
+        firstChunkWorkItem = nil
+    }
+
+    /// Reports a handoff outcome to its caller exactly once and disarms both caps.
     private func finishHandoff(_ error: ConciergeError?) {
-        handoffTimeoutWorkItem?.cancel()
-        handoffTimeoutWorkItem = nil
+        firstChunkWorkItem?.cancel()
+        firstChunkWorkItem = nil
+        turnWorkItem?.cancel()
+        turnWorkItem = nil
 
         guard let completion = handoffCompletion else { return }
         handoffCompletion = nil
@@ -563,6 +588,9 @@ final class ChatController: ObservableObject {
             onChunk: { [weak self] payload in
                 Task { @MainActor in
                     guard let self = self else { return }
+
+                    // The backend is alive, so the fast "never answered" cap has done its job.
+                    self.noteHandoffChunkReceived()
 
                     let state = payload.state
 

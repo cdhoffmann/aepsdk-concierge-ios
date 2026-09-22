@@ -17,6 +17,7 @@ final class MockChatService: ConciergeChatService {
     var plannedError: ConciergeError? = nil
     var shouldCallComplete: Bool = true
     private var pendingOnComplete: ((ConciergeError?) -> Void)? = nil
+    private var pendingOnChunk: ((ConversationPayload) -> Void)? = nil
 
     // Captures for the feedback path
     private(set) var sendFeedbackCallCount = 0
@@ -46,8 +47,14 @@ final class MockChatService: ConciergeChatService {
         if shouldCallComplete {
             onComplete(plannedError)
         } else {
+            pendingOnChunk = onChunk
             pendingOnComplete = onComplete
         }
+    }
+
+    /// Streams a chunk on a turn being held open, the way a slow-but-alive backend would.
+    func emitChunk(_ payload: ConversationPayload) {
+        pendingOnChunk?(payload)
     }
 
     private(set) var cancelActiveStreamCallCount = 0
@@ -56,12 +63,14 @@ final class MockChatService: ConciergeChatService {
     /// ordinary connection failure.
     override func cancelActiveStream() {
         cancelActiveStreamCallCount += 1
+        pendingOnChunk = nil
         guard let complete = pendingOnComplete else { return }
         pendingOnComplete = nil
         complete(.unreachable)
     }
 
     func triggerCompletion() {
+        pendingOnChunk = nil
         guard let complete = pendingOnComplete else { return }
         pendingOnComplete = nil
         complete(plannedError)
