@@ -50,6 +50,17 @@ final class MockChatService: ConciergeChatService {
         }
     }
 
+    private(set) var cancelActiveStreamCallCount = 0
+
+    /// Mirrors the real delegate: cancelling an in-flight task still reports completion, as an
+    /// ordinary connection failure.
+    override func cancelActiveStream() {
+        cancelActiveStreamCallCount += 1
+        guard let complete = pendingOnComplete else { return }
+        pendingOnComplete = nil
+        complete(.unreachable)
+    }
+
     func triggerCompletion() {
         guard let complete = pendingOnComplete else { return }
         pendingOnComplete = nil

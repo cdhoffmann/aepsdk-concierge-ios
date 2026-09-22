@@ -103,19 +103,25 @@ public enum ConciergeConstants {
         static let READ_TIMEOUT = 15.0
         static let HTTPS = "https://"
 
-        /// Slack added on top of the network read timeout and the auth-token window when budgeting
-        /// a data handoff response. Covers the main-actor hop, validation, and final-chunk render.
+        /// Wall-clock cap on a single data handoff turn, enforced by `ChatController`.
+        ///
+        /// `READ_TIMEOUT` can't serve this purpose: it's `URLRequest.timeoutInterval`, an
+        /// *inactivity* timeout, so a turn that keeps chunking steadily runs indefinitely without
+        /// tripping it. This is the hard ceiling that makes `sendDataHandoff`'s completion a
+        /// promise - the callback always fires within this window, one way or the other.
+        static let DATA_HANDOFF_TURN_TIMEOUT = 60.0
+
+        /// Slack between the controller's cap and the event hub's timer, so the controller always
+        /// wins the race. Covers the main-actor hop and dispatching the response event.
         static let DATA_HANDOFF_TIMEOUT_MARGIN = 5.0
 
-        /// Wall-clock budget for the data handoff response event.
+        /// Budget for the data handoff response event.
         ///
-        /// The response event is dispatched only once the *entire* streamed turn finishes, so this
-        /// has to outlast everything in between. `READ_TIMEOUT` alone isn't enough: it's
-        /// `URLRequest.timeoutInterval`, an *inactivity* timeout rather than a wall-clock one, and
-        /// the event hub's timer starts before auth-token resolution runs. Reusing it would report
-        /// `.noResponse` for turns that actually completed.
+        /// Strictly greater than `DATA_HANDOFF_TURN_TIMEOUT` so the controller reports the real
+        /// outcome first. The hub's own `.noResponse` is then a genuine "the extension never
+        /// answered" fallback rather than the routine result for a slow turn.
         static var dataHandoffResponseTimeout: TimeInterval {
-            READ_TIMEOUT + ConciergeAuthTokenResolver.shared.configuredTimeout + DATA_HANDOFF_TIMEOUT_MARGIN
+            DATA_HANDOFF_TURN_TIMEOUT + DATA_HANDOFF_TIMEOUT_MARGIN
         }
 
         enum EventType {

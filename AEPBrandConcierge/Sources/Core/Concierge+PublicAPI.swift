@@ -55,8 +55,8 @@ public extension Concierge {
     ///
     /// - Parameters:
     ///   - routingHint: An optional keyword consumed by Brand Concierge's current phrase-based
-    ///     router (e.g. "successful-checkout"). An empty value is forwarded when the XDM fields
-    ///     provide sufficient routing context.
+    ///     router (e.g. "successful-checkout"). Defaults to empty, which is appropriate when the
+    ///     XDM fields provide sufficient routing context.
     ///   - xdmFields: Arbitrary XDM-shaped data merged into the root of the XDM object the SDK
     ///     forwards alongside the routing hint - an ordinary nested dictionary, e.g.
     ///     `["commerce": ["order": ["purchaseID": "123"]]]`. Must be non-empty, JSON-serializable
@@ -65,13 +65,14 @@ public extension Concierge {
     ///   - localMessage: Optional text to render immediately in the chat transcript as a local,
     ///     non-networked message. `nil`/empty -> nothing shown locally; the conversation only gets
     ///     whatever Product Advisor eventually replies with.
-    ///   - completion: Called on the main actor after the handoff stream completes. Success means
-    ///     the Concierge service completed the stream; it does not imply a particular business
-    ///     action was performed by Brand Concierge or Product Advisor. If another turn is active,
-    ///     the callback receives `.chatInProgress` immediately; the app may retry after the chat
-    ///     returns to an idle state.
+    ///   - completion: Called on the main actor after the handoff stream completes, and always
+    ///     within `DATA_HANDOFF_TURN_TIMEOUT` - the turn carries a wall-clock cap, so a slow or
+    ///     stalled backend can't leave the callback hanging. Success means the Concierge service
+    ///     completed the stream; it does not imply a particular business action was performed by
+    ///     Brand Concierge or Product Advisor. If another turn is active, the callback receives
+    ///     `.chatInProgress` immediately; the app may retry after the chat returns to an idle state.
     static func sendDataHandoff(
-        routingHint: String,
+        routingHint: String = "",
         xdmFields: [String: Any],
         localMessage: String? = nil,
         completion: (@MainActor (Result<Void, ConciergeDataHandoffError>) -> Void)? = nil

@@ -205,7 +205,10 @@ public class Concierge: NSObject, Extension {
         }
 
         Task { @MainActor in
-            guard let controller = Concierge.currentSession?.controller else {
+            // `resolveSession` gates reuse on `isSessionActive`, so a handoff has to clear the same
+            // bar - an expired session's controller is still in memory but no longer valid.
+            guard let controller = Concierge.currentSession?.controller,
+                  SessionManager.shared.isSessionActive else {
                 dispatch(event: createDataHandoffResponseEvent(for: event, error: .noActiveSession))
                 return
             }
@@ -238,7 +241,7 @@ public class Concierge: NSObject, Extension {
             ConciergeConstants.DataHandoffEventData.Key.ACCEPTED: error == nil
         ]
         data[ConciergeConstants.DataHandoffEventData.Key.ERROR_CODE] = error?.code
-        data[ConciergeConstants.DataHandoffEventData.Key.ERROR_MESSAGE] = error?.localizedDescription
+        data[ConciergeConstants.DataHandoffEventData.Key.ERROR_MESSAGE] = error?.wireMessage
 
         return event.createResponseEvent(name: ConciergeConstants.EventName.DATA_HANDOFF_RESPONSE,
                                          type: ConciergeConstants.EventType.concierge,

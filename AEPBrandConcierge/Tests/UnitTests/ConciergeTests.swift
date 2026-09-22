@@ -154,13 +154,15 @@ final class ConciergeTests: XCTestCase {
             .noActiveSession,
             .chatInProgress,
             .deliveryFailed("Server was unreachable."),
+            .deliveryFailed(nil),
             .emptyResponse,
             .deliveryTimeout,
             .noResponse
         ]
 
         for error in errors {
-            let rebuilt = ConciergeDataHandoffError(code: error.code, message: error.localizedDescription)
+            // `wireMessage` is what `createDataHandoffResponseEvent` actually puts on the event.
+            let rebuilt = ConciergeDataHandoffError(code: error.code, message: error.wireMessage)
             XCTAssertEqual(rebuilt, error, "Error code '\(error.code)' did not round-trip")
         }
     }

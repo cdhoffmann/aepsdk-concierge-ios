@@ -497,22 +497,75 @@ final class ChatControllerTests: XCTestCase {
                        "the in-flight turn must still reach the service after the caller lets go")
     }
 
-    func test_dataHandoffResponseTimeout_exceedsReadTimeoutAndTokenBudget() {
-        // Regression: the handoff response timeout was `READ_TIMEOUT`, the same value used as
-        // `URLRequest.timeoutInterval`. Because that is an *inactivity* timeout and the hub's timer
-        // also covers token resolution, the two raced and reported `.noResponse` for turns that
-        // actually succeeded.
+    func test_dataHandoffResponseTimeout_outlastsTheControllerCap() {
+        // Regression: the hub budget was `READ_TIMEOUT + token budget`. Because `READ_TIMEOUT` is
+        // `URLRequest.timeoutInterval` - an *inactivity* timeout - a turn that kept chunking
+        // steadily for longer than the budget succeeded and rendered, while the hub had already
+        // reported `.noResponse` to the caller.
+        XCTAssertGreaterThan(ConciergeConstants.Request.dataHandoffResponseTimeout,
+                             ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT,
+                             "the controller must always report the outcome before the hub gives up")
+
+        XCTAssertGreaterThan(ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT,
+                             ConciergeConstants.Request.READ_TIMEOUT,
+                             "the wall-clock cap must outlast the network inactivity timeout")
+
+        // The budget is a fixed cap now, so a configured auth-token window cannot move it.
         ConciergeAuthTokenResolver.shared.setProvider(nil)
         let withoutProvider = ConciergeConstants.Request.dataHandoffResponseTimeout
-        XCTAssertGreaterThan(withoutProvider, ConciergeConstants.Request.READ_TIMEOUT,
-                             "the response budget must outlast the network read timeout")
 
         ConciergeAuthTokenResolver.shared.setProvider({ "token" }, timeout: 30)
         defer { ConciergeAuthTokenResolver.shared.setProvider(nil) }
 
-        let withProvider = ConciergeConstants.Request.dataHandoffResponseTimeout
-        XCTAssertEqual(withProvider, withoutProvider + 30, accuracy: 0.001,
-                       "a configured auth-token budget must extend the response timeout")
+        XCTAssertEqual(ConciergeConstants.Request.dataHandoffResponseTimeout, withoutProvider, accuracy: 0.001,
+                       "the response budget must not depend on the auth-token configuration")
+    }
+
+    func test_handoffThatNeverCompletes_reportsTimeoutAndUnwindsTheTurn() {
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.shouldCallComplete = false
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
+                                        handoffTurnTimeout: 0.2)
+
+        var completions: [ConciergeError?] = []
+        let started = controller.handleDataHandoff(routingHint: "stalled-turn", xdmFields: [:]) { error in
+            completions.append(error)
+        }
+        XCTAssertTrue(started)
+
+        spinUntil(timeout: 2.0, !completions.isEmpty)
+
+        XCTAssertEqual(completions.count, 1, "the caller must hear back exactly once")
+        guard case .timeout = completions.first ?? nil else {
+            return XCTFail("a stalled turn must report .timeout, got \(String(describing: completions.first ?? nil))")
+        }
+        XCTAssertEqual(fakeService.cancelActiveStreamCallCount, 1,
+                       "the stalled request must be cancelled, not left running")
+
+        // Cancelling drives the delegate's failure path, which tries to complete a second time.
+        spinUntil(timeout: 1.0, controller.chatState == .idle)
+        XCTAssertEqual(completions.count, 1, "the cancellation must not deliver a second completion")
+        XCTAssertEqual(controller.chatState, .idle, "a timed-out turn must leave the chat usable")
+    }
+
+    func test_handoffThatCompletesInTime_disarmsTheTimeoutCap() {
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
+                                        handoffTurnTimeout: 0.2)
+
+        var completions: [ConciergeError?] = []
+        _ = controller.handleDataHandoff(routingHint: "prompt-turn", xdmFields: [:]) { error in
+            completions.append(error)
+        }
+
+        spinUntil(!completions.isEmpty)
+        XCTAssertEqual(completions.count, 1)
+
+        // Outlive the cap: a disarmed timer must not fire a second, spurious completion.
+        spinUntil(timeout: 0.6, false)
+        XCTAssertEqual(completions.count, 1, "the cap must be disarmed once the turn completes")
+        XCTAssertEqual(fakeService.cancelActiveStreamCallCount, 0,
+                       "a turn that finished on time must not be cancelled")
     }
 
     func test_streaming_success_sets_idle_marks_shouldSpeak_and_attaches_sources() {
@@ -1411,8 +1464,8 @@ final class ChatControllerTests: XCTestCase {
     }
 
     // MARK: - Helpers
-    private func makeController(configuration: ConciergeConfiguration, service: MockChatService, capturer: MockSpeechCapturer? = nil, dispatch: ((_ event: Event) -> Void)? = nil) -> ChatController {
-        ChatController(configuration: configuration, chatService: service, speechCapturer: capturer, speaker: NoopSpeaker(), dispatch: dispatch)
+    private func makeController(configuration: ConciergeConfiguration, service: MockChatService, capturer: MockSpeechCapturer? = nil, dispatch: ((_ event: Event) -> Void)? = nil, handoffTurnTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT) -> ChatController {
+        ChatController(configuration: configuration, chatService: service, speechCapturer: capturer, speaker: NoopSpeaker(), dispatch: dispatch, handoffTurnTimeout: handoffTurnTimeout)
     }
 
     private func makePayload(state: String, message: String? = nil, sources: [Source]? = nil, conversationId: String? = nil, interactionId: String? = nil) -> ConversationPayload {

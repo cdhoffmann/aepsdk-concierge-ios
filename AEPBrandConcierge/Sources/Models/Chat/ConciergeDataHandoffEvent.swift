@@ -119,6 +119,16 @@ public enum ConciergeDataHandoffError: Error, Equatable, LocalizedError {
         }
     }
 
+    /// The message that has to survive the event boundary for `init(code:message:)` to rebuild the
+    /// exact same case. Only `.deliveryFailed` carries one; every other case is reconstructed from
+    /// `code` alone and regenerates identical copy via `errorDescription`. Writing
+    /// `localizedDescription` here instead would turn `.deliveryFailed(nil)` into
+    /// `.deliveryFailed(<fallback copy>)` on the way back.
+    var wireMessage: String? {
+        if case .deliveryFailed(let message) = self { return message }
+        return nil
+    }
+
     public var errorDescription: String? {
         switch self {
         case .missingEventData:

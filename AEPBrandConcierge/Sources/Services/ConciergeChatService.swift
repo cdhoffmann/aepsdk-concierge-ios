@@ -85,6 +85,12 @@ class ConciergeChatService: NSObject {
 
             dataTask?.resume()
         } catch {
+            // The handlers were already registered above, and this instance may still own a live
+            // `dataTask` from a prior turn. Clearing them stops that task's delegate callback from
+            // firing this same `onComplete` a second time.
+            onChunkHandler = nil
+            onCompleteHandler = nil
+
             let conciergeError = (error as? ConciergeError) ?? .unknown
             Log.warning(label: LOG_TAG, conciergeError.localizedDescription)
             onComplete(conciergeError)
@@ -281,6 +287,12 @@ class ConciergeChatService: NSObject {
         ]
     }
 
+    /// Cancels the turn currently in flight, if any. The delegate still reports completion, so the
+    /// caller unwinds through its normal failure path.
+    func cancelActiveStream() {
+        disconnect()
+    }
+
     private func disconnect() {
         dataTask?.cancel()
         dataTask = nil
@@ -328,7 +340,9 @@ extension ConciergeChatService: URLSessionDataDelegate {
             Log.warning(label: LOG_TAG, "An error occurred while connecting to the Concierge server: \(error.localizedDescription)")
             // A timed-out turn is reported distinctly from an unreachable host so a data handoff
             // caller can retry a slow turn without retrying one the service actively rejected.
-            if (error as NSError).code == NSURLErrorTimedOut {
+            // The domain is checked too: -1001 in any other domain is a different failure.
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorTimedOut {
                 onCompleteHandler?(.timeout(Int(ConciergeConstants.Request.READ_TIMEOUT)))
             } else {
                 onCompleteHandler?(.unreachable)

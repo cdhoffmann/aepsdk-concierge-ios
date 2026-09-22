@@ -53,6 +53,15 @@ final class ChatController: ObservableObject {
     private let dispatch: ((_ event: Event) -> Void)?
 
     private var welcomeMessagesLoaded: Bool = false
+
+    /// The in-flight handoff's completion and its wall-clock cap. A single pair is enough: the
+    /// `chatState != .processing` guard admits only one handoff turn at a time.
+    private var handoffCompletion: ((ConciergeError?) -> Void)?
+    private var handoffTimeoutWorkItem: DispatchWorkItem?
+
+    /// Injectable so tests can exercise the cap without waiting out the production value.
+    private let handoffTurnTimeout: TimeInterval
+
     private var latestSources: [Source] = []
     private var latestLinkHints: [LinkHint] = []
     private var latestPromptSuggestions: [String] = []
@@ -89,6 +98,7 @@ final class ChatController: ObservableObject {
         self.chatService = ConciergeChatService(configuration: configuration, urlSessionConfiguration: urlSessionConfiguration)
         self.speechController = SpeechController(capturer: speechCapturer, speaker: speaker)
         self.dispatch = dispatch
+        self.handoffTurnTimeout = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT
 
         configureSpeech()
         observeComposerState()
@@ -96,11 +106,12 @@ final class ChatController: ObservableObject {
 
     #if DEBUG
     // Internal for testing only
-    init(configuration: ConciergeConfiguration?, chatService: ConciergeChatService, speechCapturer: SpeechCapturing?, speaker: TextSpeaking?, dispatch: ((_ event: Event) -> Void)? = nil) {
+    init(configuration: ConciergeConfiguration?, chatService: ConciergeChatService, speechCapturer: SpeechCapturing?, speaker: TextSpeaking?, dispatch: ((_ event: Event) -> Void)? = nil, handoffTurnTimeout: TimeInterval = ConciergeConstants.Request.DATA_HANDOFF_TURN_TIMEOUT) {
         self.configuration = configuration
         self.chatService = chatService
         self.speechController = SpeechController(capturer: speechCapturer, speaker: speaker)
         self.dispatch = dispatch
+        self.handoffTurnTimeout = handoffTurnTimeout
 
         configureSpeech()
         observeComposerState()
@@ -293,7 +304,10 @@ final class ChatController: ObservableObject {
         }
 
         chatState = .processing
-        streamAgentResponse(for: routingHint, extraXDMFields: xdmFields, completion: completion)
+        armHandoffTimeout(completion)
+        streamAgentResponse(for: routingHint, extraXDMFields: xdmFields) { [weak self] error in
+            self?.finishHandoff(error)
+        }
 
         // `streamAgentResponse` appends its streaming placeholder synchronously, so with no local
         // message that placeholder is now the last message and becomes the anchor instead.
@@ -301,6 +315,41 @@ final class ChatController: ObservableObject {
             scrollToTop(messageId: anchorMessageId)
         }
         return true
+    }
+
+    /// Arms the wall-clock cap for a handoff turn.
+    ///
+    /// The network layer's `READ_TIMEOUT` is an inactivity timeout, so a turn that keeps chunking
+    /// steadily never trips it. Without this cap a long-but-healthy turn would outlive the event
+    /// hub's timer, and the app would be told `.noResponse` while the answer rendered fine.
+    private func armHandoffTimeout(_ completion: ((ConciergeError?) -> Void)?) {
+        handoffCompletion = completion
+
+        let workItem = DispatchWorkItem {
+            Task { @MainActor [weak self] in
+                guard let self = self, self.handoffCompletion != nil else { return }
+                Log.warning(label: self.LOG_TAG, "Data handoff turn exceeded its wall-clock timeout.")
+                self.finishHandoff(.timeout(Int(self.handoffTurnTimeout)))
+
+                // Reported first, then cancelled: the cancellation reaches the delegate as an
+                // ordinary failure, which unwinds the transcript and chat state through the
+                // existing error branch. Its completion call is swallowed, as `finishHandoff`
+                // fires once.
+                self.chatService.cancelActiveStream()
+            }
+        }
+        handoffTimeoutWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + handoffTurnTimeout, execute: workItem)
+    }
+
+    /// Reports a handoff outcome to its caller exactly once and disarms the cap.
+    private func finishHandoff(_ error: ConciergeError?) {
+        handoffTimeoutWorkItem?.cancel()
+        handoffTimeoutWorkItem = nil
+
+        guard let completion = handoffCompletion else { return }
+        handoffCompletion = nil
+        completion(error)
     }
 
     /// Scrolls the transcript so `messageId` sits at the top, leaving the rest of the screen for
