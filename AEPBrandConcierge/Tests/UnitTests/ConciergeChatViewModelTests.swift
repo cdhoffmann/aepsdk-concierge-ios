@@ -32,7 +32,7 @@ final class ChatControllerTests: XCTestCase {
 
         // Non-idle -> ignored
         controller.applyTextChange("hi")
-        controller.chatState = .processing
+        controller.setChatStateForTesting(.processing)
         controller.sendMessage(isUser: true)
         XCTAssertEqual(controller.messages.count, 0)
         XCTAssertEqual(controller.chatState, .processing)
@@ -88,12 +88,18 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertEqual(controllerEmpty.messages.count, 1)
     }
 
-    func test_handleDataHandoff_whenChatIsProcessing_rejectsWithoutStartingStream() {
+    /// A handoff is refused while the *user's* own turn is streaming, not just while another
+    /// handoff is. Both occupy the service's single `dataTask`/handler pair.
+    func test_handleDataHandoff_whileATypedTurnIsInFlight_rejectsWithoutStartingStream() {
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.shouldCallComplete = false // keep the typed turn in flight
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService)
-        controller.chatState = .processing
-        var completionCalls: [ConciergeError?] = []
 
+        controller.applyTextChange("what should I buy?")
+        controller.sendMessage(isUser: true)
+        spinUntil(fakeService.streamChatCallCount == 1)
+
+        var completionCalls: [ConciergeError?] = []
         let started = controller.handleDataHandoff(routingHint: "successful-checkout",
                                                    xdmFields: ["commerce": ["order": ["purchaseID": "abc123"]]],
                                                    localMessage: "This must not render") { error in
@@ -101,9 +107,9 @@ final class ChatControllerTests: XCTestCase {
         }
 
         XCTAssertFalse(started)
-        XCTAssertNil(fakeService.lastQuery)
-        XCTAssertEqual(fakeService.streamChatCallCount, 0)
-        XCTAssertTrue(controller.messages.isEmpty)
+        XCTAssertEqual(fakeService.lastQuery, "what should I buy?")
+        XCTAssertEqual(fakeService.streamChatCallCount, 1, "the rejected handoff must not reach the service")
+        XCTAssertFalse(controller.messages.contains { $0.messageBody == "This must not render" })
         // A rejected handoff is reported through the `false` return, not the completion - firing
         // both would deliver two results for one request.
         XCTAssertTrue(completionCalls.isEmpty)
@@ -180,7 +186,7 @@ final class ChatControllerTests: XCTestCase {
     func test_handleDataHandoff_afterErrorState_isAccepted() {
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService)
-        controller.chatState = .error(.networkFailure)
+        controller.setChatStateForTesting(.error(.networkFailure))
 
         let started = controller.handleDataHandoff(routingHint: "retry-after-failure", xdmFields: [:])
         spinUntil(fakeService.lastQuery != nil)
@@ -227,15 +233,21 @@ final class ChatControllerTests: XCTestCase {
 
     func test_handleDataHandoff_whenRejected_doesNotScroll() {
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.shouldCallComplete = false // keep the first turn in flight
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService)
-        controller.chatState = .processing
+
+        controller.handleDataHandoff(routingHint: "first", xdmFields: [:])
+        spinUntil(fakeService.streamChatCallCount == 1)
+        spinUntil(timeout: 0.3, false) // let the accepted turn's own scroll land first
         let tickBefore = controller.userScrollTick
+        let anchorBefore = controller.userMessageToScrollId
 
         controller.handleDataHandoff(routingHint: "successful-checkout", xdmFields: [:], localMessage: "Nope")
         spinUntil(timeout: 0.3, controller.userScrollTick != tickBefore)
 
         XCTAssertEqual(controller.userScrollTick, tickBefore)
-        XCTAssertNil(controller.userMessageToScrollId)
+        XCTAssertEqual(controller.userMessageToScrollId, anchorBefore,
+                       "a rejected handoff must not move the transcript off the live turn")
     }
 
     /// A handoff appends only agent-styled messages. Keying "the conversation has started" off a

@@ -28,6 +28,7 @@
 		1297F79D2A9C4E61BBBE69DC /* ConciergeTrackingEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24070DF09312406A88B8F60F /* ConciergeTrackingEvent.swift */; };
 		24037ABB2EF3645E00FF4031 /* InputController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037AB82EF3645E00FF4031 /* InputController.swift */; };
 		24037ABC2EF3645E00FF4031 /* ChatController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037AB72EF3645E00FF4031 /* ChatController.swift */; };
+		4CDH00042F0000000000A004 /* ChatTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CDH00032F0000000000A003 /* ChatTurn.swift */; };
 		24037ABD2EF3645E00FF4031 /* SpeechController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037AB92EF3645E00FF4031 /* SpeechController.swift */; };
 		24037AC22EF3648600FF4031 /* Concierge+PublicAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037ABF2EF3648600FF4031 /* Concierge+PublicAPI.swift */; };
 		24037AC32EF3648600FF4031 /* Concierge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24037ABE2EF3648600FF4031 /* Concierge.swift */; };
@@ -257,6 +258,7 @@
 		18212DD855ADEEFDFE97322B /* Pods-UnitTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-UnitTests.debug.xcconfig"; path = "Target Support Files/Pods-UnitTests/Pods-UnitTests.debug.xcconfig"; sourceTree = "<group>"; };
 		202C8B02213B468D0644D4CA /* Pods-ConciergeDemoApp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ConciergeDemoApp.release.xcconfig"; path = "Target Support Files/Pods-ConciergeDemoApp/Pods-ConciergeDemoApp.release.xcconfig"; sourceTree = "<group>"; };
 		24037AB72EF3645E00FF4031 /* ChatController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatController.swift; sourceTree = "<group>"; };
+		4CDH00032F0000000000A003 /* ChatTurn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTurn.swift; sourceTree = "<group>"; };
 		24037AB82EF3645E00FF4031 /* InputController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputController.swift; sourceTree = "<group>"; };
 		24037AB92EF3645E00FF4031 /* SpeechController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechController.swift; sourceTree = "<group>"; };
 		24037ABE2EF3648600FF4031 /* Concierge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Concierge.swift; sourceTree = "<group>"; };
@@ -479,6 +481,7 @@
 			isa = PBXGroup;
 			children = (
 				24037AB72EF3645E00FF4031 /* ChatController.swift */,
+				4CDH00032F0000000000A003 /* ChatTurn.swift */,
 				24037AB82EF3645E00FF4031 /* InputController.swift */,
 				24037AB92EF3645E00FF4031 /* SpeechController.swift */,
 			);
@@ -1291,6 +1294,7 @@
 				4CDB0DBE2EC82C6B000B85D0 /* ThemeTypes.swift in Sources */,
 				24037ABB2EF3645E00FF4031 /* InputController.swift in Sources */,
 				24037ABC2EF3645E00FF4031 /* ChatController.swift in Sources */,
+				4CDH00042F0000000000A004 /* ChatTurn.swift in Sources */,
 				24037ABD2EF3645E00FF4031 /* SpeechController.swift in Sources */,
 				4CDB0DBF2EC82C6B000B85D0 /* Theme.swift in Sources */,
 				4CDB0DC02EC82C6B000B85D0 /* ThemeCSSMapper.swift in Sources */,

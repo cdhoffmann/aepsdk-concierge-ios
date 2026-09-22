@@ -131,7 +131,7 @@ struct ChatView: View {
                 subtitle: subtitleText,
                 onToggleMode: { isAgent in
                     if isAgent {
-                        controller.chatState = .idle
+                        controller.abandonActiveTurn()
                     }
                 },
                 onClose: {
