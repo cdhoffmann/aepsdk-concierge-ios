@@ -59,12 +59,17 @@ final class MockChatService: ConciergeChatService {
 
     private(set) var cancelActiveStreamCallCount = 0
 
-    /// Mirrors the real delegate: cancelling an in-flight task still reports completion, as an
-    /// ordinary connection failure.
+    /// Whether cancelling reports a completion. True mirrors the real delegate when a `dataTask` is
+    /// in flight: the cancellation surfaces as an ordinary connection failure. Set false to model
+    /// the case the real service also has - `cancelActiveStream()` is `dataTask?.cancel()`, so with
+    /// nothing in flight it reports nothing at all, and the caller gets no failure path to unwind
+    /// through.
+    var completesOnCancel = true
+
     override func cancelActiveStream() {
         cancelActiveStreamCallCount += 1
         pendingOnChunk = nil
-        guard let complete = pendingOnComplete else { return }
+        guard completesOnCancel, let complete = pendingOnComplete else { return }
         pendingOnComplete = nil
         complete(.unreachable)
     }
