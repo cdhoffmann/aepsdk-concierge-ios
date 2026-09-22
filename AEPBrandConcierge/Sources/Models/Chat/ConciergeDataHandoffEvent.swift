@@ -73,8 +73,7 @@ public enum ConciergeDataHandoffError: Error, Equatable, LocalizedError {
     /// A stable, machine-readable identifier for this error.
     ///
     /// Public so an app can report the failure to analytics or crash reporting without switching
-    /// over every case. These values match the Android SDK's
-    /// `ConciergeDataHandoffRejectReason.rawValue` so cross-platform reporting lines up.
+    /// over every case.
     public var code: String {
         switch self {
         case .missingEventData: return "missing_event_data"

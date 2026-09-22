@@ -184,8 +184,8 @@ final class ConciergeTests: XCTestCase {
     }
 
     /// `code` is public so an app can report a failure to analytics without switching over every
-    /// case, and the values are contracted to match the Android SDK's `rawValue`s.
-    func test_errorCodes_matchAndroidRawValues() {
+    /// case, so these strings are a stable contract and must not drift.
+    func test_errorCodes_areStable() {
         let expected: [(ConciergeDataHandoffError, String)] = [
             (.missingEventData, "missing_event_data"),
             (.emptyXdmFields, "empty_xdm_fields"),

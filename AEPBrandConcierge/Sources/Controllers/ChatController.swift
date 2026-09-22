@@ -54,8 +54,13 @@ final class ChatController: ObservableObject {
 
     private var welcomeMessagesLoaded: Bool = false
 
-    /// The in-flight handoff's completion and its wall-clock cap. A single pair is enough: the
+    /// The in-flight handoff's completion and the caps that bound it. A single set is enough: the
     /// `chatState != .processing` guard admits only one handoff turn at a time.
+    ///
+    /// `handoffInFlight` is tracked separately from `handoffCompletion` because the completion is
+    /// optional. Keying the caps off the completion would silently disable them for a caller that
+    /// passed `nil`, leaving a stalled turn parked in `.processing` forever.
+    private var handoffInFlight = false
     private var handoffCompletion: ((ConciergeError?) -> Void)?
     private var firstChunkWorkItem: DispatchWorkItem?
     private var turnWorkItem: DispatchWorkItem?
@@ -331,6 +336,7 @@ final class ChatController: ObservableObject {
     /// what produced the original mismatch: a long-but-healthy turn rendered while the app was
     /// told it had failed.
     private func armHandoffTimeouts(_ completion: ((ConciergeError?) -> Void)?) {
+        handoffInFlight = true
         handoffCompletion = completion
 
         firstChunkWorkItem = scheduleHandoffTimeout(after: handoffFirstChunkTimeout,
@@ -342,7 +348,7 @@ final class ChatController: ObservableObject {
     private func scheduleHandoffTimeout(after interval: TimeInterval, reason: String) -> DispatchWorkItem {
         let workItem = DispatchWorkItem {
             Task { @MainActor [weak self] in
-                guard let self = self, self.handoffCompletion != nil else { return }
+                guard let self = self, self.handoffInFlight else { return }
                 Log.warning(label: self.LOG_TAG, "Data handoff turn \(reason).")
                 self.finishHandoff(.timeout(Int(interval)))
 
@@ -361,12 +367,14 @@ final class ChatController: ObservableObject {
     ///
     /// No-ops for an ordinary typed turn, which has no handoff caller waiting on it.
     private func noteHandoffChunkReceived() {
+        guard handoffInFlight else { return }
         firstChunkWorkItem?.cancel()
         firstChunkWorkItem = nil
     }
 
     /// Reports a handoff outcome to its caller exactly once and disarms both caps.
     private func finishHandoff(_ error: ConciergeError?) {
+        handoffInFlight = false
         firstChunkWorkItem?.cancel()
         firstChunkWorkItem = nil
         turnWorkItem?.cancel()
@@ -729,19 +737,21 @@ final class ChatController: ObservableObject {
                             current.isStreamComplete = true
                             self.messages[streamingMessageIndex] = current
                             completedPayload = current.payload
-
-                            // A cards-only response has nothing for the text bubble, so drop the
-                            // placeholder rather than leave an empty one above the cards. The
-                            // payload has already been captured for tracking.
-                            if accumulatedContent.isEmpty && !latestElements.isEmpty {
-                                self.messages.remove(at: streamingMessageIndex)
-                            }
                         }
 
                         guard let completedPayload else {
                             Log.warning(label: self.LOG_TAG, "responseCompleted skipped: streaming message index out of bounds")
                             self.clearState()
                             return
+                        }
+
+                        // A cards-only response has nothing for the text bubble, so drop the
+                        // placeholder rather than leave an empty one above the cards. Deliberately
+                        // after the guard above: removing it on a path that then returns early
+                        // would strip the turn's only message and still report success.
+                        if accumulatedContent.isEmpty && !latestElements.isEmpty,
+                           streamingMessageIndex < self.messages.count {
+                            self.messages.remove(at: streamingMessageIndex)
                         }
                         self.dispatchTrackingEvent(.responseCompleted(
                             conversationId: completedPayload.conversationId ?? "unknown",

@@ -583,6 +583,26 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertNil(completions.first ?? nil, "the slow turn ultimately succeeded")
     }
 
+    func test_handoffWithNoCompletion_isStillCapped() {
+        // Regression: the caps were keyed off `handoffCompletion`, so a caller that passed no
+        // completion armed them and then had every fire no-op - parking the chat in `.processing`
+        // with no way back and no error.
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.shouldCallComplete = false
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
+                                        handoffTurnTimeout: 5.0, handoffFirstChunkTimeout: 0.2)
+
+        let started = controller.handleDataHandoff(routingHint: "no-callback", xdmFields: [:])
+        XCTAssertTrue(started)
+
+        spinUntil(timeout: 2.0, fakeService.cancelActiveStreamCallCount == 1)
+        XCTAssertEqual(fakeService.cancelActiveStreamCallCount, 1,
+                       "the cap must fire even when the caller wants no callback")
+
+        spinUntil(timeout: 1.0, controller.chatState == .idle)
+        XCTAssertEqual(controller.chatState, .idle, "the chat must not be left stuck in .processing")
+    }
+
     func test_handoffThatCompletesInTime_disarmsBothCaps() {
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,

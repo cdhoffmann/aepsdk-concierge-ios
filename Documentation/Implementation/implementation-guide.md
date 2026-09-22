@@ -242,8 +242,8 @@ Concierge.sendDataHandoff(
   | `noResponse` | `no_response` | The extension itself never responded — an internal failure, distinct from the backend timing out, which reports `deliveryTimeout`. |
 
   `code` is a public, stable identifier intended for analytics and crash reporting, so an app can
-  report a failure without switching over every case. These values match the Android SDK's
-  `ConciergeDataHandoffRejectReason.rawValue`, so cross-platform reporting lines up.
+  report a failure without switching over every case. They are a stable contract and will not
+  change for an existing case.
 
   A failed handoff is rendered in the chat transcript the same way a failed user turn is, and the
   chat returns to idle. An app should generally **not** present its own error UI on `.failure`, or
@@ -275,7 +275,7 @@ Concierge.sendDataHandoff(
         analytics.track("concierge_handoff_delivered")
 
     case .failure(let error):
-        // `code` is stable and matches Android, so reporting needs no per-case mapping.
+        // `code` is stable, so reporting needs no per-case mapping.
         analytics.track("concierge_handoff_failed", ["code": error.code])
 
         switch error {
