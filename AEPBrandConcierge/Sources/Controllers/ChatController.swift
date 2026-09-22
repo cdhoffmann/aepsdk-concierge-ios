@@ -374,6 +374,13 @@ final class ChatController: ObservableObject {
     /// alone left the turn running: it went on streaming into a transcript the composer was now
     /// live against, and its caller was never told. Ending the turn properly reports it, removes
     /// its placeholder and releases the request.
+    ///
+    /// Discarding the placeholder is deliberate for *both* turn kinds, not just `.handoff`. A
+    /// typed turn's placeholder may already hold partial text, and that text is an answer to a
+    /// question the chat is no longer in a position to finish - leaving a truncated reply behind
+    /// with no indication it was cut short reads as a complete answer. Note this is currently
+    /// unreachable: the only caller is `ChatView`'s `onToggleMode`, and `ChatTopBar` never invokes
+    /// it because its `body` doesn't render the toggle.
     func abandonActiveTurn() {
         guard let turn = activeTurn else { return }
         turn.resolve(.unknown)
@@ -623,6 +630,16 @@ final class ChatController: ObservableObject {
                     guard let self = self, self.activeTurn === turn else { return }
 
                     // The service is alive, so the fast "never answered" cap has done its job.
+                    //
+                    // Deliberately *any* chunk, including a content-free heartbeat, rather than the
+                    // `hasVisibleContent` gate used a few lines below for `responseStarted`. The two
+                    // answer different questions: this one asks "is the backend wedged?", which a
+                    // heartbeat disproves, while that one asks "is there something to show the
+                    // user?". Cancelling a turn that is demonstrably alive but still warming up
+                    // would be worse than letting the ceiling bound it, and a backend that
+                    // heartbeats forever without ever answering is still caught there. Matches
+                    // Android, which stands its first-chunk cap down on any emission for the same
+                    // reason.
                     turn.noteResponseStarted()
 
                     let state = payload.state

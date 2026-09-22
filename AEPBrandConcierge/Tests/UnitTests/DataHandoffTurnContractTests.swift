@@ -298,16 +298,19 @@ final class DataHandoffTurnContractTests: XCTestCase {
         let service = MockChatService(configuration: configuration)
         service.shouldCallComplete = false
         ConciergeAuthTokenResolver.shared.setProvider({
-            try? await Task.sleep(nanoseconds: 800_000_000)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             return "late"
         }, timeout: 30)
 
         // The ceiling, not the fast cap, is what bounds a turn still waiting on its token.
+        // The 10x gap between the ceiling and the token is margin, not precision: the assertion
+        // only means anything if the ceiling fires first, and a loaded CI runner can delay a
+        // `DispatchQueue.main.asyncAfter` work item well past its deadline.
         let controller = makeController(service: service, turnTimeout: 0.2, firstChunkTimeout: 5.0)
         _ = controller.handleDataHandoff(routingHint: "slow-token", xdmFields: [:])
 
         spinUntil(timeout: 2.0, controller.chatState == .idle)
-        spinUntil(timeout: 1.5, false) // outlive the token window
+        spinUntil(timeout: 2.5, false) // outlive the token window
 
         XCTAssertEqual(service.streamChatCallCount, 0,
                        "F: an abandoned turn must not hit the network when its token arrives")
