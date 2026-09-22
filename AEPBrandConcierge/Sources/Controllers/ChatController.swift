@@ -65,6 +65,16 @@ final class ChatController: ObservableObject {
     private var firstChunkWorkItem: DispatchWorkItem?
     private var turnWorkItem: DispatchWorkItem?
 
+    /// Identifies the turn currently in flight. Bumped when a turn starts and again when one is
+    /// abandoned, so a superseded turn's callbacks can be told apart from the live turn's and
+    /// dropped. Without it, a turn abandoned by a cap comes back to life the moment its auth token
+    /// resolves and renders a reply the caller was already told had failed.
+    private var turnGeneration: UInt64 = 0
+
+    /// Index of the streaming placeholder for the turn in flight, so a cap can remove it without
+    /// waiting for a service completion that may never arrive.
+    private var activeStreamingMessageIndex: Int?
+
     /// Injectable so tests can exercise the caps without waiting out the production values.
     private let handoffFirstChunkTimeout: TimeInterval
     private let handoffTurnTimeout: TimeInterval
@@ -352,10 +362,12 @@ final class ChatController: ObservableObject {
                 Log.warning(label: self.LOG_TAG, "Data handoff turn \(reason).")
                 self.finishHandoff(.timeout(Int(interval)))
 
-                // Reported first, then cancelled: the cancellation reaches the delegate as an
-                // ordinary failure, which unwinds the transcript and chat state through the
-                // existing error branch. Its completion call is swallowed, as `finishHandoff`
-                // fires once.
+                // The unwind must not depend on the cancellation below. Until the turn's auth
+                // token resolves there is no `dataTask` to cancel, and cancelling nothing reports
+                // nothing - which left the chat parked in `.processing` with a dead composer.
+                // Abandoning the turn here makes the unwind unconditional, and drops the late
+                // callbacks that would otherwise revive it.
+                self.abandonTurn()
                 self.chatService.cancelActiveStream()
             }
         }
@@ -383,6 +395,21 @@ final class ChatController: ObservableObject {
         guard let completion = handoffCompletion else { return }
         handoffCompletion = nil
         completion(error)
+    }
+
+    /// Abandons the turn in flight, so a cap can guarantee the unwind on its own.
+    ///
+    /// Bumping the generation makes every callback still owed by that turn a no-op, including the
+    /// `streamChat` call that hasn't been reached yet while its auth token resolves. The transcript
+    /// and chat state are then unwound directly rather than through the service's failure path,
+    /// which only reports when there was something to cancel.
+    private func abandonTurn() {
+        turnGeneration &+= 1
+        if let index = activeStreamingMessageIndex, index < messages.count {
+            messages.remove(at: index)
+        }
+        activeStreamingMessageIndex = nil
+        clearState()
     }
 
     /// Scrolls the transcript so `messageId` sits at the top, leaving the rest of the screen for
@@ -583,6 +610,10 @@ final class ChatController: ObservableObject {
         let streamingMessageIndex = messages.count
         messages.append(Message(template: .basic(isUserMessage: false), messageBody: ""))
 
+        turnGeneration &+= 1
+        let generation = turnGeneration
+        activeStreamingMessageIndex = streamingMessageIndex
+
         // Accumulators are used to handle the progressive building up of response content from the server
         // and to be able to effectively do a diff of what has already been received and what is new.
         var accumulatedContent = ""
@@ -597,10 +628,17 @@ final class ChatController: ObservableObject {
         // controller were released before this task first resumed. The hold is bounded by one turn.
         Task { [self] in
             let token = await ConciergeAuthTokenResolver.shared.resolveToken()
+
+            // A handoff cap may have fired while the token resolved. Sending the request now would
+            // render a reply into a turn whose caller has already been told it failed.
+            guard self.turnGeneration == generation else {
+                Log.debug(label: self.LOG_TAG, "Turn abandoned before it reached the service; not sending.")
+                return
+            }
             self.chatService.streamChat(query, token: token, extraXDMFields: extraXDMFields,
             onChunk: { [weak self] payload in
                 Task { @MainActor in
-                    guard let self = self else { return }
+                    guard let self = self, self.turnGeneration == generation else { return }
 
                     // The backend is alive, so the fast "never answered" cap has done its job.
                     self.noteHandoffChunkReceived()
@@ -687,6 +725,10 @@ final class ChatController: ObservableObject {
             },
             onComplete: { [weak self] error in
                 Task { @MainActor in
+                    // A turn abandoned by a cap has already reported its outcome and unwound the
+                    // transcript. Its late completion must not do either a second time.
+                    if let self = self, self.turnGeneration != generation { return }
+
                     // The handoff caller must hear back exactly once on every path out of this
                     // closure, including the early `return`s below and a deallocated controller.
                     var handoffError: ConciergeError? = error
@@ -697,6 +739,8 @@ final class ChatController: ObservableObject {
                         handoffError = handoffError ?? .unknown
                         return
                     }
+
+                    self.activeStreamingMessageIndex = nil
 
                     if let error = error {
                         Log.error(label: self.LOG_TAG, "Streaming error: \(error)")

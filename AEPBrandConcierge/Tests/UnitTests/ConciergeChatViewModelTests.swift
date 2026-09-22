@@ -641,6 +641,79 @@ final class ChatControllerTests: XCTestCase {
         XCTAssertEqual(controller.chatState, .idle, "the chat must not be left stuck in .processing")
     }
 
+    func test_handoffCappedBeforeTheTurnReachesTheService_stillUnwindsTheChat() {
+        // Regression: `armHandoffTimeouts` runs before `streamAgentResponse` has finished awaiting
+        // the auth token, so the cap can fire while the service still has no `dataTask`. The unwind
+        // used to depend on `cancelActiveStream()` producing a delegate failure - but cancelling
+        // nothing reports nothing, so the chat stayed in `.processing` with a dead composer.
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.shouldCallComplete = false
+
+        // A provider slower than the first-chunk cap, so the cap fires mid-resolution. Apps can
+        // configure this: `setProvider(_:timeout:)` accepts anything up to `maxTimeout` (600s).
+        ConciergeAuthTokenResolver.shared.setProvider({
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            return "late-token"
+        }, timeout: 30)
+        defer { ConciergeAuthTokenResolver.shared.setProvider(nil) }
+
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
+                                        handoffTurnTimeout: 5.0, handoffFirstChunkTimeout: 0.2)
+
+        var completions: [ConciergeError?] = []
+        let started = controller.handleDataHandoff(routingHint: "slow-token", xdmFields: [:]) { error in
+            completions.append(error)
+        }
+        XCTAssertTrue(started)
+
+        spinUntil(timeout: 2.0, !completions.isEmpty)
+        XCTAssertEqual(completions.count, 1, "the caller must hear back exactly once")
+        guard case .timeout = completions.first ?? nil else {
+            return XCTFail("a turn capped before it started must report .timeout, got \(String(describing: completions.first ?? nil))")
+        }
+        XCTAssertEqual(fakeService.streamChatCallCount, 0,
+                       "the cap must have fired before the turn reached the service")
+
+        spinUntil(timeout: 2.0, controller.chatState == .idle)
+        XCTAssertEqual(controller.chatState, .idle,
+                       "a turn capped before it started must still leave the chat usable")
+    }
+
+    func test_handoffCappedBeforeTheTurnStarts_doesNotLaterReviveTheTurn() {
+        // The second half of the same defect: once the token finally resolved, the abandoned turn
+        // went on to hit the network and render a reply into the transcript - for a handoff the app
+        // had already been told had timed out.
+        let fakeService = MockChatService(configuration: mockConciergeConfiguration)
+        fakeService.shouldCallComplete = false
+
+        ConciergeAuthTokenResolver.shared.setProvider({
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            return "late-token"
+        }, timeout: 30)
+        defer { ConciergeAuthTokenResolver.shared.setProvider(nil) }
+
+        let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
+                                        handoffTurnTimeout: 5.0, handoffFirstChunkTimeout: 0.2)
+
+        var completions: [ConciergeError?] = []
+        _ = controller.handleDataHandoff(routingHint: "slow-token", xdmFields: [:], localMessage: "Your order is confirmed!") { error in
+            completions.append(error)
+        }
+
+        spinUntil(timeout: 2.0, !completions.isEmpty)
+        spinUntil(timeout: 2.0, controller.chatState == .idle)
+
+        // Outlive the token resolution: the superseded turn must stay abandoned.
+        spinUntil(timeout: 1.5, false)
+
+        XCTAssertEqual(fakeService.streamChatCallCount, 0,
+                       "an abandoned turn must not reach the service once its token resolves")
+        XCTAssertEqual(completions.count, 1, "the abandoned turn must not deliver a second completion")
+        XCTAssertEqual(controller.chatState, .idle, "the revived turn must not put the chat back into .processing")
+        XCTAssertEqual(controller.messages.count, 1, "only the local message should remain")
+        XCTAssertEqual(controller.messages.first?.messageBody, "Your order is confirmed!")
+    }
+
     func test_handoffThatCompletesInTime_disarmsBothCaps() {
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
