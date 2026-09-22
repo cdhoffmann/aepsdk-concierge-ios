@@ -290,7 +290,8 @@ Concierge.sendDataHandoff(
             Concierge.show(surfaces: surfaces)
             pendingHandoff = order
         case .deliveryFailed, .emptyResponse, .noResponse:
-            break                           // already shown in the transcript
+            // Nothing was rendered in the transcript, so the app owns this failure.
+            showCheckoutBanner("We couldn't load your recommendations.")
         case .missingEventData, .emptyXdmFields, .invalidXdmFieldValue, .reservedKeyCollision:
             assertionFailure("Bad handoff payload: \(error.localizedDescription)")
         }
