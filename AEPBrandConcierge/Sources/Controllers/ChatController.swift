@@ -336,23 +336,35 @@ final class ChatController: ObservableObject {
         return true
     }
 
-    /// Arms the two caps that bound a handoff turn.
+    /// Arms the hard ceiling that bounds a handoff turn.
     ///
-    /// They answer different failure modes. The first-chunk cap catches a backend that never
-    /// responds at all, which is the common hang and worth failing fast on. The turn cap is the
-    /// hard ceiling that makes `sendDataHandoff`'s completion a promise; it has to stay generous,
-    /// because cancelling a turn that is actively streaming throws away a reply the user was about
-    /// to see. Without the ceiling the event hub's timer would become the de-facto bound, which is
-    /// what produced the original mismatch: a long-but-healthy turn rendered while the app was
+    /// This one runs from submission and covers everything the turn does, including the wait for an
+    /// auth token. It is what makes `sendDataHandoff`'s completion a promise, so it has to stay
+    /// generous: cancelling a turn that is actively streaming throws away a reply the user was
+    /// about to see. Without it the event hub's timer would become the de-facto bound, which is
+    /// what produced the original mismatch - a long-but-healthy turn rendered while the app was
     /// told it had failed.
+    ///
+    /// The fast "never answered" cap is deliberately *not* armed here; see `armFirstChunkCap`.
     private func armHandoffTimeouts(_ completion: ((ConciergeError?) -> Void)?) {
         handoffInFlight = true
         handoffCompletion = completion
 
-        firstChunkWorkItem = scheduleHandoffTimeout(after: handoffFirstChunkTimeout,
-                                                    reason: "produced no response")
         turnWorkItem = scheduleHandoffTimeout(after: handoffTurnTimeout,
                                               reason: "exceeded its wall-clock cap")
+    }
+
+    /// Arms the fast "the backend never answered" cap, at the moment the request actually goes out.
+    ///
+    /// It measures the service's silence, so it can only start once there is a request to be silent
+    /// about. Arming it at submission instead made it run through the auth-token wait, and an app
+    /// that registered a provider slower than the cap had every handoff reported as a delivery
+    /// timeout for a request that was never sent. Time spent waiting on a token is bounded by the
+    /// resolver's own timeout and, above that, by the turn ceiling.
+    private func armFirstChunkCap() {
+        guard handoffInFlight else { return }
+        firstChunkWorkItem = scheduleHandoffTimeout(after: handoffFirstChunkTimeout,
+                                                    reason: "produced no response")
     }
 
     private func scheduleHandoffTimeout(after interval: TimeInterval, reason: String) -> DispatchWorkItem {
@@ -635,6 +647,7 @@ final class ChatController: ObservableObject {
                 Log.debug(label: self.LOG_TAG, "Turn abandoned before it reached the service; not sending.")
                 return
             }
+            self.armFirstChunkCap()
             self.chatService.streamChat(query, token: token, extraXDMFields: extraXDMFields,
             onChunk: { [weak self] payload in
                 Task { @MainActor in

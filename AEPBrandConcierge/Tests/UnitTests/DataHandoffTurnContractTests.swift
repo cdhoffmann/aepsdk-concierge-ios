@@ -302,7 +302,8 @@ final class DataHandoffTurnContractTests: XCTestCase {
             return "late"
         }, timeout: 30)
 
-        let controller = makeController(service: service, turnTimeout: 5.0, firstChunkTimeout: 0.2)
+        // The ceiling, not the fast cap, is what bounds a turn still waiting on its token.
+        let controller = makeController(service: service, turnTimeout: 0.2, firstChunkTimeout: 5.0)
         _ = controller.handleDataHandoff(routingHint: "slow-token", xdmFields: [:])
 
         spinUntil(timeout: 2.0, controller.chatState == .idle)

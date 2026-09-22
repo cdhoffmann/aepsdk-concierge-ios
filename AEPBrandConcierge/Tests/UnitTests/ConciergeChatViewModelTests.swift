@@ -642,15 +642,17 @@ final class ChatControllerTests: XCTestCase {
     }
 
     func test_handoffCappedBeforeTheTurnReachesTheService_stillUnwindsTheChat() {
-        // Regression: `armHandoffTimeouts` runs before `streamAgentResponse` has finished awaiting
-        // the auth token, so the cap can fire while the service still has no `dataTask`. The unwind
+        // Regression: the turn ceiling is armed before `streamAgentResponse` has finished awaiting
+        // the auth token, so it can fire while the service still has no `dataTask`. The unwind
         // used to depend on `cancelActiveStream()` producing a delegate failure - but cancelling
         // nothing reports nothing, so the chat stayed in `.processing` with a dead composer.
         let fakeService = MockChatService(configuration: mockConciergeConfiguration)
         fakeService.shouldCallComplete = false
 
-        // A provider slower than the first-chunk cap, so the cap fires mid-resolution. Apps can
+        // A provider slower than the turn ceiling, so the ceiling fires mid-resolution. Apps can
         // configure this: `setProvider(_:timeout:)` accepts anything up to `maxTimeout` (600s).
+        // The ceiling is the cap that runs during the token wait; the fast no-response cap only
+        // starts once a request is actually in flight.
         ConciergeAuthTokenResolver.shared.setProvider({
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             return "late-token"
@@ -658,7 +660,7 @@ final class ChatControllerTests: XCTestCase {
         defer { ConciergeAuthTokenResolver.shared.setProvider(nil) }
 
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
-                                        handoffTurnTimeout: 5.0, handoffFirstChunkTimeout: 0.2)
+                                        handoffTurnTimeout: 0.2, handoffFirstChunkTimeout: 5.0)
 
         var completions: [ConciergeError?] = []
         let started = controller.handleDataHandoff(routingHint: "slow-token", xdmFields: [:]) { error in
@@ -693,7 +695,7 @@ final class ChatControllerTests: XCTestCase {
         defer { ConciergeAuthTokenResolver.shared.setProvider(nil) }
 
         let controller = makeController(configuration: mockConciergeConfiguration, service: fakeService,
-                                        handoffTurnTimeout: 5.0, handoffFirstChunkTimeout: 0.2)
+                                        handoffTurnTimeout: 0.2, handoffFirstChunkTimeout: 5.0)
 
         var completions: [ConciergeError?] = []
         _ = controller.handleDataHandoff(routingHint: "slow-token", xdmFields: [:], localMessage: "Your order is confirmed!") { error in

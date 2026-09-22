@@ -37,15 +37,6 @@ final class ConciergeAuthTokenResolver {
     private var _provider: (@Sendable () async -> String?)?
     private var _timeoutNanoseconds: UInt64 = 3_000_000_000 // defaultTimeout in ns; overwritten on setProvider
 
-    /// The time `resolveToken()` can currently spend awaiting the provider, in seconds. Zero when
-    /// no provider is registered. Used by callers budgeting a wall-clock timeout around a turn.
-    var configuredTimeout: TimeInterval {
-        lock.lock()
-        defer { lock.unlock() }
-        guard _provider != nil else { return 0 }
-        return TimeInterval(_timeoutNanoseconds) / 1_000_000_000
-    }
-
     /// Registers `provider` and the maximum time to await it before sending the turn without a
     /// token. Pass `nil` to clear. `timeout` is clamped to `[0, maxTimeout]`.
     func setProvider(_ provider: (@Sendable () async -> String?)?,
