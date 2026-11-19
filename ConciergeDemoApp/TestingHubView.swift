@@ -23,6 +23,7 @@ struct TestingHubView: View {
         case linkHandling = "Link Handling"
         case authToken = "Auth Token"
         case buyNowMock = "Buy Now Mock"
+        case headless = "Headless"
 
         var id: String { rawValue }
     }
@@ -65,11 +66,18 @@ struct TestingHubView: View {
                 AuthTokenTestView(onOpenChat: onOpenChatViaSwiftUITab)
             case .buyNowMock:
                 buyNowMockScenario
+            case .headless:
+                HeadlessCoreChatView(
+                    surfaces: ["web://edge-int.adobedc.net/brand-concierge/pages/745F37C35E4B776E0A49421B@AdobeOrg/acom_m15/index.html"],
+                    useMockResponses: $buyNowMockRequested,
+                    handleLink: handleLink
+                )
             }
         }
-        .onAppear { buyNowMockScenarioSelected = scenario == .buyNowMock }
+        // The headless POC reuses the Buy Now mock so cards and CTAs can be exercised offline.
+        .onAppear { buyNowMockScenarioSelected = scenario == .buyNowMock || scenario == .headless }
         .onChange(of: scenario) { newScenario in
-            buyNowMockScenarioSelected = newScenario == .buyNowMock
+            buyNowMockScenarioSelected = newScenario == .buyNowMock || newScenario == .headless
         }
     }
 

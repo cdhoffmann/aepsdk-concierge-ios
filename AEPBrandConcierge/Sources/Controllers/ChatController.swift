@@ -79,7 +79,8 @@ final class ChatController: ObservableObject {
     // MARK: - Private Properties
 
     private let LOG_TAG = "ChatController"
-    private let chatService: ConciergeChatService
+    /// The UI-free conversation core this controller drives. Shared with headless integrations.
+    let core: ConciergeConversationCore
     let configuration: ConciergeConfiguration?
     private let speechController: SpeechController
     private let dispatch: ((_ event: Event) -> Void)?
@@ -149,7 +150,7 @@ final class ChatController: ObservableObject {
         }
         self.identityGeneration = generation
         self.configuration = configuration
-        self.chatService = ConciergeChatService(configuration: configuration, urlSessionConfiguration: urlSessionConfiguration)
+        self.core = ConciergeConversationCore(configuration: configuration, urlSessionConfiguration: urlSessionConfiguration, identityGeneration: generation)
         self.speechController = SpeechController(capturer: speechCapturer, speaker: speaker, identityGeneration: generation)
         self.dispatch = dispatch
         self.appState = appState
@@ -169,7 +170,7 @@ final class ChatController: ObservableObject {
             ConciergeIdentityBoundary.shared.generation
         }
         self.configuration = configuration
-        self.chatService = chatService
+        self.core = ConciergeConversationCore(configuration: configuration ?? ConciergeConfiguration(), transport: chatService, identityGeneration: identityGeneration)
         self.speechController = SpeechController(capturer: speechCapturer, speaker: speaker, identityGeneration: identityGeneration)
         self.dispatch = dispatch
         self.appState = appState
@@ -364,7 +365,7 @@ final class ChatController: ObservableObject {
             // `streamAgentResponse` sends over the wire moments later is what's visible in
             // Assurance on this event - the SDK's chat turns bypass the Event Hub entirely, so
             // this is the only place the outbound XDM is ever observable outside local debug logs.
-            let sessionID = chatService.resolveSessionID()
+            let sessionID = core.sessionId
             let xdmContext = ConciergeXDMContextStore.shared.snapshot(for: sessionID)
             dispatchTrackingEvent(.querySubmitted(query: text, xdmFields: xdmContext))
             streamAgentResponse(for: text, heldXDMFields: xdmContext, sessionID: sessionID)
@@ -436,7 +437,7 @@ final class ChatController: ObservableObject {
         turn.resolve(.timeout(Int(interval)))
         discardPlaceholder(of: turn)
         endTurn(turn)
-        chatService.cancelActiveStream()
+        core.cancel()
     }
 
     private func retryAfterForeground(_ turn: ChatTurn, _ request: RecoveryRequest) {
@@ -539,15 +540,14 @@ final class ChatController: ObservableObject {
         turn.resolve(.unknown)
         discardPlaceholder(of: turn)
         endTurn(turn)
-        chatService.cancelActiveStream()
+        core.cancel()
     }
 
     func endConversationForIdentityReset() {
         endedForIdentityReset = true
         nativeCards.removeAll()
         abandonActiveTurn()
-        chatService.endFeedbackForIdentityReset()
-        chatService.invalidateTransportForIdentityReset()
+        core.endForIdentityReset()
         speechController.stopSpeaking()
         speechController.endCapture { _, _ in }
         inputController.apply(.reset)
@@ -620,7 +620,7 @@ final class ChatController: ObservableObject {
             return
         }
 
-        guard let configuration = configuration else {
+        guard configuration != nil else {
             Log.debug(label: LOG_TAG, "Unable to send feedback, configuration is not available.")
             return
         }
@@ -639,41 +639,11 @@ final class ChatController: ObservableObject {
         // Write the updated message back to the array so UI updates
         messages[index] = currentMessage
 
-        // Generate an edge event to track the feedback
-        let feedbackEventData: [String: Any] = [
-            ConciergeConstants.Request.Keys.XDM: [
-                ConciergeConstants.Request.Keys.EVENT_TYPE: ConciergeConstants.Request.EventType.CONVERSATION_FEEDBACK,
-                // Forward identityMap verbatim; falls back to an ECID-only map
-                ConciergeConstants.Request.Keys.IDENTITY_MAP: configuration.identityMapPayload,
-                ConciergeConstants.Request.Keys.CONVERSATION: [
-                    ConciergeConstants.Request.Keys.Feedback.FEEDBACK: [
-                        ConciergeConstants.Request.Keys.Feedback.SOURCE: ConciergeConstants.Request.Values.Feedback.END_USER,
-                        ConciergeConstants.Request.Keys.Feedback.RAW: [
-                            [
-                                ConciergeConstants.Request.Keys.Feedback.TEXT: feedbackPayload.notes,
-                                ConciergeConstants.Request.Keys.Feedback.PURPOSE: ConciergeConstants.Request.Values.Feedback.USER_INPUT
-                            ]
-                        ],
-                        ConciergeConstants.Request.Keys.Feedback.RATING: [
-                            ConciergeConstants.Request.Keys.Feedback.SCORE: feedbackPayload.sentiment == .positive ? 1 : 0,
-                            ConciergeConstants.Request.Keys.Feedback.CLASSIFICATION: feedbackPayload.sentiment.thumbsValue(),
-                            ConciergeConstants.Request.Keys.Feedback.REASONS: feedbackPayload.selectedOptions
-                        ]
-                    ],
-                    ConciergeConstants.Request.Keys.Feedback.CONVERSATION_ID: messagePayload.conversationId ?? "unknown",
-                    ConciergeConstants.Request.Keys.Feedback.TURN_ID: messagePayload.interactionId ?? "unknown"
-                ]
-            ]
-        ]
-
-        Task { [weak self] in
-            guard let self else { return }
-            let token = await ConciergeAuthTokenResolver.shared.resolveToken()
-            ConciergeIdentityBoundary.shared.synchronized {
-                guard self.identityReady else { return }
-                self.chatService.sendFeedback(data: feedbackEventData, token: token)
-            }
-        }
+        core.sendFeedback(conversationId: messagePayload.conversationId,
+                          interactionId: messagePayload.interactionId,
+                          sentiment: feedbackPayload.sentiment,
+                          reasons: feedbackPayload.selectedOptions,
+                          notes: feedbackPayload.notes)
 
         dispatchTrackingEvent(.feedbackSubmitted(
             conversationId: messagePayload.conversationId ?? "unknown",
@@ -788,12 +758,8 @@ final class ChatController: ObservableObject {
 
         // Freeze the context before the asynchronous token-provider wait, so the request carries
         // the same snapshot a typed turn already exposed in its query-submitted event.
-        let resolvedSessionID = sessionID ?? chatService.resolveSessionID()
-        lastTurnSessionID = resolvedSessionID
-        var mergedXDMFields = heldXDMFields ?? ConciergeXDMContextStore.shared.snapshot(for: resolvedSessionID)
-        if let extraXDMFields {
-            mergedXDMFields = ConciergeXDMContextStore.merging(extraXDMFields, over: mergedXDMFields)
-        }
+        let requestContext = core.requestContext(sessionID: sessionID, heldXDMFields: heldXDMFields, extraXDMFields: extraXDMFields)
+        lastTurnSessionID = requestContext.sessionID
 
         // Accumulators are used to handle the progressive building up of response content from the server
         // and to be able to effectively do a diff of what has already been received and what is new.
@@ -826,8 +792,7 @@ final class ChatController: ObservableObject {
             turn.armNoResponseCap { [weak self] interval in
                 self?.cap(turn, after: interval, reason: "produced no response")
             }
-            self.chatService.streamChat(query, token: token, extraXDMFields: mergedXDMFields.isEmpty ? nil : mergedXDMFields,
-            sessionID: resolvedSessionID,
+            self.core.stream(query, token: token, context: requestContext,
             onChunk: { [weak self] payload in
                 callbackSequencer.enqueue { [weak self] in
                     guard let self = self, self.identityReady, self.activeTurn === turn else { return }
@@ -949,8 +914,8 @@ final class ChatController: ObservableObject {
                     if let effectiveError, turn.reserveBackgroundRecovery(for: effectiveError) {
                         self.retryAfterForeground(turn, RecoveryRequest(
                             query: query,
-                            xdmFields: mergedXDMFields,
-                            sessionID: resolvedSessionID,
+                            xdmFields: requestContext.xdmFields,
+                            sessionID: requestContext.sessionID,
                             error: effectiveError,
                             attemptStartedAt: attemptStartedAt
                         ))

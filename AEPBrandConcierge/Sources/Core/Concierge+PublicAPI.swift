@@ -411,9 +411,11 @@ extension Concierge {
     ///
     /// - Parameters:
     ///   - surfaces: The surface identifiers for this chat experience.
+    ///   - onFailure: Called instead of `completion` when no configuration can be resolved.
     ///   - completion: Called on the main actor with the resolved configuration. Not called on failure.
     static func fetchChatConfiguration(
         forSurfaces surfaces: [String],
+        onFailure: (@Sendable () -> Void)? = nil,
         completion: @escaping @MainActor (ConciergeConfiguration, Int) -> Void
     ) {
         let generation = ConciergeIdentityBoundary.shared.synchronized {
@@ -429,11 +431,13 @@ extension Concierge {
                   let eventData = responseEvent.data,
                   let config = eventData[ConciergeConstants.EventData.Key.CONFIG] as? ConciergeConfiguration else {
                 Log.warning(label: ConciergeConstants.LOG_TAG, "Unable to show chat UI - configuration is not available.")
+                onFailure?()
                 return
             }
             Task { @MainActor in
                 guard ConciergeIdentityBoundary.shared.admits(generation) else {
                     Log.warning(label: ConciergeConstants.LOG_TAG, "Discarding stale chat configuration after identity reset.")
+                    onFailure?()
                     return
                 }
                 completion(config, generation)

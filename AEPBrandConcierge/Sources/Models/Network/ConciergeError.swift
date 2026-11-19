@@ -13,7 +13,7 @@
 import Foundation
 
 /// Errors that can occur during Concierge service operations.
-enum ConciergeError: Error {
+public enum ConciergeError: Error {
     case invalidData(String)
     case invalidEndpoint(String)
     case invalidDatastream(String)
@@ -23,10 +23,16 @@ enum ConciergeError: Error {
     case timeout(Int)
     case unknown
     case unreachable
+    /// A turn is already streaming on this conversation core.
+    case turnInProgress
+    /// The conversation was ended by an identity reset. Request a new conversation core.
+    case conversationEnded
+    /// Configuration for the requested surfaces was not available (ex: Edge Identity not ready).
+    case configurationUnavailable
 }
 
 extension ConciergeError: LocalizedError {
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .invalidData(let message),
             .invalidEndpoint(let message),
@@ -42,6 +48,12 @@ extension ConciergeError: LocalizedError {
             return "Unknown error."
         case .unreachable:
             return "Server was unreachable."
+        case .turnInProgress:
+            return "A turn is already in progress."
+        case .conversationEnded:
+            return "The conversation ended because identities were reset."
+        case .configurationUnavailable:
+            return "Concierge configuration is not available."
         }
     }
 }

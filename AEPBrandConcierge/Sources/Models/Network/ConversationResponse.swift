@@ -98,7 +98,7 @@ public struct MultimodalElements: Codable {
 
 /// The resolved rendering category of a multimodal element.
 /// Derived from the raw `type` string on `MultimodalElement`.
-enum MultimodalElementType: Equatable {
+public enum MultimodalElementType: Equatable {
     /// A call to action button
     case ctaButton
     /// An unknown or unspecified element type.
@@ -219,7 +219,7 @@ public struct MultimodalElement: Codable {
     }
 
     /// The resolved element type derived from the raw `type` string.
-    var elementType: MultimodalElementType {
+    public var elementType: MultimodalElementType {
         MultimodalElementType(rawType: type)
     }
 }
