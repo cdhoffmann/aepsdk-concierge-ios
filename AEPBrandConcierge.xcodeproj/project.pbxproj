@@ -232,6 +232,7 @@
 		D000ECC120251120000000A1 /* ConciergeEventTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D000ECC120251120000000A0 /* ConciergeEventTracker.swift */; };
 		D41A7C9E3B2F48A15E6C0917 /* ProductCardCarouselSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72B9D4A1C5F63B08A2E7D31 /* ProductCardCarouselSnapshotTests.swift */; };
 		D680B287B96F87A9860DFCD4 /* TestingHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 908306C0ADD3A3C6A0992252 /* TestingHubView.swift */; };
+		E1B8129856254E6F1FD148D0 /* ConciergeTurn.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC1DCAB789E67CBB8D1AD351 /* ConciergeTurn.swift */; };
 		EC30B9694E27AF981D6DBA75 /* ConciergeConversationCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F984DB1F452B10ECA1D9111 /* ConciergeConversationCoreTests.swift */; };
 		FD89E045080E424A53837DC5 /* Pods_UnitTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C499727DAE8BD01BA05537D1 /* Pods_UnitTests.framework */; };
 /* End PBXBuildFile section */
@@ -486,6 +487,7 @@
 		B6C8A8D300235DCA7C2130A1 /* ConciergeXDMContextStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConciergeXDMContextStore.swift; sourceTree = "<group>"; };
 		B83AC8F6176F39468E33F041 /* ComposerEditingViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerEditingViewTests.swift; sourceTree = "<group>"; };
 		B83AC8F6176F39468E33F051 /* ChatComposerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerTests.swift; sourceTree = "<group>"; };
+		BC1DCAB789E67CBB8D1AD351 /* ConciergeTurn.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ConciergeTurn.swift; sourceTree = "<group>"; };
 		BFBC7DC8624C882960D3959D /* Concierge+Headless.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Concierge+Headless.swift"; sourceTree = "<group>"; };
 		C3F8624C10234AB791040002 /* PrivacyNoticeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyNoticeView.swift; sourceTree = "<group>"; };
 		C3F8624C10234AB791040004 /* PrivacyNoticeSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyNoticeSnapshotTests.swift; sourceTree = "<group>"; };
@@ -563,6 +565,7 @@
 				B6C8A8D300235DCA7C2130A1 /* ConciergeXDMContextStore.swift */,
 				D42AEB2A31F74127E39B9828 /* ConciergeConversationCore.swift */,
 				BFBC7DC8624C882960D3959D /* Concierge+Headless.swift */,
+				BC1DCAB789E67CBB8D1AD351 /* ConciergeTurn.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -1422,6 +1425,7 @@
 				303532C5E36667560B8E3352 /* ConciergeXDMContextStore.swift in Sources */,
 				7F8C7093B16FEF03ED94BE9F /* ConciergeConversationCore.swift in Sources */,
 				8D20455A8A4ABAB35A98782F /* Concierge+Headless.swift in Sources */,
+				E1B8129856254E6F1FD148D0 /* ConciergeTurn.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

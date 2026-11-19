@@ -13,9 +13,9 @@
 import SwiftUI
 import AEPBrandConcierge
 
-/// Headless (thin core) POC: a chat UI the *app* owns, built only on the public
-/// `ConciergeConversationCore` + `Concierge.track`. Everything below the core - the transcript,
-/// stream accumulation, product/CTA extraction and analytics - is code a customer writes.
+/// Headless (thin core + turn assembler) POC: a chat UI the *app* owns, built only on the public
+/// `ConciergeConversationCore.sendTurn` + `Concierge.track`. The SDK assembles each response and
+/// reports turn analytics; the app owns the transcript, rendering and tap tracking.
 struct HeadlessCoreChatView: View {
     let surfaces: [String]
     @Binding var useMockResponses: Bool
@@ -54,17 +54,18 @@ struct HeadlessCoreMessage: Identifiable {
 
     let id = UUID()
     let role: Role
-    var text: String
-    var products: [MultimodalElement] = []
-    var ctas: [ActionButton] = []
-    var suggestions: [String] = []
-    var sources: [Source] = []
-    var isComplete = false
-    var feedbackEligible = false
+    var userText = ""
+    var turn = ConciergeTurn()
     var feedbackSentiment: FeedbackSentiment?
-    var conversationId: String?
-    var interactionId: String?
     var failed = false
+
+    var text: String { role == .user ? userText : turn.text }
+    var products: [MultimodalElement] { turn.products }
+    var ctas: [ActionButton] { turn.ctaButtons }
+    var suggestions: [String] { turn.isComplete ? turn.promptSuggestions : [] }
+    var sources: [Source] { turn.isComplete ? turn.sources : [] }
+    var isComplete: Bool { failed || turn.isComplete }
+    var feedbackEligible: Bool { turn.feedbackEligible }
 }
 
 @MainActor
@@ -107,33 +108,19 @@ final class HeadlessCoreChatModel: ObservableObject {
             return
         }
 
-        messages.append(HeadlessCoreMessage(role: .user, text: query))
-        messages.append(HeadlessCoreMessage(role: .agent, text: ""))
+        messages.append(HeadlessCoreMessage(role: .user, userText: query))
+        messages.append(HeadlessCoreMessage(role: .agent))
         let index = messages.count - 1
         isProcessing = true
-        Concierge.track(.querySubmitted(query: query, xdmFields: [:]))
 
+        // querySubmitted, responseStarted/Completed, cardsRendered and errorOccurred are reported by sendTurn.
         turnTask = Task {
-            var started = false
             do {
-                for try await chunk in core.send(query) {
-                    guard let response = chunk.response else { continue }
-                    let elements = response.multimodalElements?.elements ?? []
-                    if !started, !response.message.isEmpty || !elements.isEmpty {
-                        started = true
-                        Concierge.track(.responseStarted(conversationId: chunk.conversationId, interactionId: chunk.interactionId))
-                    }
-                    if chunk.isInProgress {
-                        messages[index].text += response.message
-                    } else if chunk.isCompleted {
-                        apply(final: chunk, response: response, at: index)
-                    }
+                for try await turn in core.sendTurn(query) {
+                    messages[index].turn = turn
                 }
-                messages[index].isComplete = true
             } catch {
                 messages[index].failed = true
-                messages[index].isComplete = true
-                Concierge.track(.errorOccurred(error.localizedDescription))
             }
             isProcessing = false
         }
@@ -146,26 +133,9 @@ final class HeadlessCoreChatModel: ObservableObject {
     func sendFeedback(for id: UUID, sentiment: FeedbackSentiment) {
         guard let core, let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].feedbackSentiment = sentiment
-        core.sendFeedback(conversationId: messages[index].conversationId,
-                          interactionId: messages[index].interactionId,
+        core.sendFeedback(conversationId: messages[index].turn.conversationId,
+                          interactionId: messages[index].turn.interactionId,
                           sentiment: sentiment)
-    }
-
-    private func apply(final chunk: ConversationPayload, response: ConversationResponse, at index: Int) {
-        let elements = response.multimodalElements?.elements ?? []
-        let products = elements.filter { $0.elementType != .ctaButton }
-        messages[index].text = response.message
-        messages[index].products = products
-        messages[index].ctas = elements.filter { $0.elementType == .ctaButton }.compactMap { $0.entityInfo?.primary }
-        messages[index].suggestions = response.promptSuggestions ?? []
-        messages[index].sources = response.sources ?? []
-        messages[index].feedbackEligible = response.feedback?.eligible ?? false
-        messages[index].conversationId = chunk.conversationId
-        messages[index].interactionId = chunk.interactionId
-        Concierge.track(.responseCompleted(conversationId: chunk.conversationId, interactionId: chunk.interactionId))
-        if !products.isEmpty {
-            Concierge.track(.productsRendered(products))
-        }
     }
 }
 
@@ -208,8 +178,8 @@ private struct HeadlessCoreTranscriptView: View {
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Headless Concierge (thin core)").font(.title2.bold())
-            Text("Rendered by the app from raw ConversationPayload chunks.")
+            Text("Headless Concierge (core + turns)").font(.title2.bold())
+            Text("Rendered by the app from assembled ConciergeTurn values.")
                 .font(.subheadline).foregroundColor(.secondary)
             ForEach([BuyNowMockURLProtocol.productCardsPrompt, "What can you help me with?"], id: \.self) { prompt in
                 Button(prompt) {

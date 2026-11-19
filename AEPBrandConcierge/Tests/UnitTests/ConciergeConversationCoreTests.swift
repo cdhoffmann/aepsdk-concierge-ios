@@ -17,13 +17,16 @@ final class ConciergeConversationCoreTests: XCTestCase {
 
     private var transport: MockChatService!
     private var core: ConciergeConversationCore!
+    private var dispatched: [String] = []
 
     override func setUp() {
         super.setUp()
         let configuration = ConciergeConfiguration()
         transport = MockChatService(configuration: configuration)
         let generation = ConciergeIdentityBoundary.shared.synchronized { ConciergeIdentityBoundary.shared.generation }
-        core = ConciergeConversationCore(configuration: configuration, transport: transport, identityGeneration: generation)
+        dispatched = []
+        core = ConciergeConversationCore(configuration: configuration, transport: transport, identityGeneration: generation,
+                                         dispatch: { [weak self] in self?.dispatched.append($0.name) })
     }
 
     override func tearDown() {
@@ -116,10 +119,67 @@ final class ConciergeConversationCoreTests: XCTestCase {
                                             ConciergeConstants.TrackingEvent.Name.LINK_CLICKED])
     }
 
-    private func payload(state: String, message: String) -> ConversationPayload {
+    // MARK: - ConciergeTurn + sendTurn
+
+    func test_turn_appendsDeltas_completedReplaces_andReportsVisibleOnce() {
+        var turn = ConciergeTurn()
+
+        XCTAssertFalse(turn.apply(payload(state: "in-progress", message: "")))
+        XCTAssertTrue(turn.apply(payload(state: "in-progress", message: "Hel")))
+        XCTAssertFalse(turn.apply(payload(state: "in-progress", message: "lo")))
+        XCTAssertEqual(turn.text, "Hello")
+        XCTAssertFalse(turn.isComplete)
+
+        turn.apply(payload(state: "completed", message: "Hello there",
+                           elements: [product("Shoe"), cta("Buy Now")], suggestions: ["More"], eligible: true))
+        XCTAssertEqual(turn.text, "Hello there")
+        XCTAssertTrue(turn.isComplete)
+        XCTAssertTrue(turn.feedbackEligible)
+        XCTAssertEqual(turn.products.map { $0.entityInfo?.productName }, ["Shoe"])
+        XCTAssertEqual(turn.ctaButtons.map(\.text), ["Buy Now"])
+        XCTAssertEqual(turn.promptSuggestions, ["More"])
+    }
+
+    func test_sendTurn_reportsTurnEventsAutomatically() async throws {
+        transport.plannedChunks = [payload(state: "in-progress", message: "Hi"),
+                                   payload(state: "completed", message: "Hi", elements: [product("Shoe")])]
+
+        var last: ConciergeTurn?
+        for try await turn in core.sendTurn("shoes") { last = turn }
+
+        typealias Name = ConciergeConstants.TrackingEvent.Name
+        XCTAssertEqual(last?.isComplete, true)
+        XCTAssertEqual(dispatched, [Name.QUERY_SUBMITTED, Name.RESPONSE_STARTED, Name.RESPONSE_COMPLETED, Name.CARDS_RENDERED])
+    }
+
+    func test_sendTurn_emptyResponse_throwsAndReportsError() async {
+        transport.plannedChunks = [payload(state: "completed", message: "")]
+        do {
+            for try await _ in core.sendTurn("hi") {}
+            XCTFail("Expected invalidResponseData")
+        } catch ConciergeError.invalidResponseData {
+        } catch {
+            XCTFail("Unexpected \(error)")
+        }
+        XCTAssertEqual(dispatched.last, ConciergeConstants.TrackingEvent.Name.ERROR_OCCURRED)
+    }
+
+    private func payload(state: String, message: String, elements: [MultimodalElement]? = nil,
+                         suggestions: [String]? = nil, eligible: Bool = false) -> ConversationPayload {
         ConversationPayload(conversationId: "conv-1", interactionId: "turn-1", request: nil,
-                            response: ConversationResponse(message: message, promptSuggestions: nil, multimodalElements: nil,
-                                                           sources: nil, linkHints: nil, state: nil, feedback: nil),
+                            response: ConversationResponse(message: message, promptSuggestions: suggestions,
+                                                           multimodalElements: elements.map { MultimodalElements(elements: $0) },
+                                                           sources: nil, linkHints: nil, state: nil,
+                                                           feedback: ConversationFeedbackInfo(eligible: eligible)),
                             state: state, key: nil, value: nil, maxAge: nil)
+    }
+
+    private func product(_ name: String) -> MultimodalElement {
+        MultimodalElement(id: name, type: "product", entityInfo: EntityInfo(productName: name))
+    }
+
+    private func cta(_ label: String) -> MultimodalElement {
+        MultimodalElement(id: label, type: "ctaButton",
+                          entityInfo: EntityInfo(primary: ActionButton(text: label, url: "https://dsg.com/buy")))
     }
 }

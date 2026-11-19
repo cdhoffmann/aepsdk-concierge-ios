@@ -10,6 +10,7 @@
  governing permissions and limitations under the License.
  */
 
+import AEPCore
 import AEPServices
 import Foundation
 
@@ -36,11 +37,15 @@ public final class ConciergeConversationCore {
     private let lock = NSLock()
     private var streaming = false
     private var ended = false
+    /// Where `sendTurn` reports its analytics events. Injectable for tests.
+    let dispatch: (Event) -> Void
 
-    init(configuration: ConciergeConfiguration, transport: ConciergeChatService, identityGeneration: Int) {
+    init(configuration: ConciergeConfiguration, transport: ConciergeChatService, identityGeneration: Int,
+         dispatch: @escaping (Event) -> Void = { MobileCore.dispatch(event: $0) }) {
         self.configuration = configuration
         self.transport = transport
         self.identityGeneration = identityGeneration
+        self.dispatch = dispatch
     }
 
     convenience init(configuration: ConciergeConfiguration,
@@ -77,12 +82,56 @@ public final class ConciergeConversationCore {
     /// The stream finishes after the service closes the connection, or throws a `ConciergeError`.
     /// Cancelling the consuming task cancels the request.
     public func send(_ query: String, xdmFields: [String: Any]? = nil) -> AsyncThrowingStream<ConversationPayload, Error> {
+        payloads(for: query, context: requestContext(extraXDMFields: xdmFields))
+    }
+
+    /// Sends `query` and streams the response as an assembled `ConciergeTurn`, reporting the
+    /// turn's analytics events automatically.
+    ///
+    /// Yields an updated turn for every chunk that changes it; the last one has `isComplete`.
+    /// Reports `querySubmitted`, `responseStarted`, `responseCompleted`, `cardsRendered` and
+    /// `errorOccurred` exactly as the SDK's chat UI does, so the app tracks only taps.
+    /// A response with no text and no products throws `ConciergeError.invalidResponseData`.
+    public func sendTurn(_ query: String, xdmFields: [String: Any]? = nil) -> AsyncThrowingStream<ConciergeTurn, Error> {
+        let context = requestContext(extraXDMFields: xdmFields)
+        let payloads = payloads(for: query, context: context)
+        return AsyncThrowingStream { continuation in
+            let task = Task { [self] in
+                track(.querySubmitted(query: query, xdmFields: context.xdmFields))
+                var turn = ConciergeTurn()
+                do {
+                    for try await payload in payloads {
+                        if turn.apply(payload) {
+                            track(.responseStarted(conversationId: turn.conversationId, interactionId: turn.interactionId))
+                        }
+                        continuation.yield(turn)
+                    }
+                    try Task.checkCancellation()
+                    guard !turn.isEmpty else { throw ConciergeError.invalidResponseData }
+                    track(.responseCompleted(conversationId: turn.conversationId, interactionId: turn.interactionId))
+                    if !turn.products.isEmpty {
+                        track(.productsRendered(turn.products))
+                    }
+                    continuation.finish()
+                } catch {
+                    if !(error is CancellationError) {
+                        track(.errorOccurred(error.localizedDescription))
+                    }
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { reason in
+                if case .cancelled = reason { task.cancel() }
+            }
+        }
+    }
+
+    private func payloads(for query: String, context: RequestContext) -> AsyncThrowingStream<ConversationPayload, Error> {
         AsyncThrowingStream { continuation in
             if let rejection = beginStreaming() {
                 continuation.finish(throwing: rejection)
                 return
             }
-            let context = requestContext(extraXDMFields: xdmFields)
             let task = Task { [self] in
                 let token = await ConciergeAuthTokenResolver.shared.resolveToken()
                 ConciergeIdentityBoundary.shared.synchronized {
@@ -223,6 +272,10 @@ public final class ConciergeConversationCore {
     }
 
     // MARK: - Private
+
+    private func track(_ event: ConciergeAnalyticsEvent) {
+        event.trackingEvents.forEach { dispatch($0.toEvent()) }
+    }
 
     private func beginStreaming() -> ConciergeError? {
         if isEnded { return .conversationEnded }

@@ -52,7 +52,9 @@ public extension Concierge {
 /// An analytics event a custom chat UI reports through `Concierge.track(_:)`.
 ///
 /// Mirrors the events the SDK's chat UI dispatches. Feedback is not listed: it is tracked by
-/// `ConciergeConversationCore.sendFeedback`.
+/// `ConciergeConversationCore.sendFeedback`. When using `ConciergeConversationCore.sendTurn`, the
+/// turn events (`querySubmitted`, `responseStarted`, `responseCompleted`, `productsRendered`,
+/// `errorOccurred`) are reported for you; track only user interactions.
 public enum ConciergeAnalyticsEvent {
     case chatOpened
     case chatClosed(durationMillis: Int64)

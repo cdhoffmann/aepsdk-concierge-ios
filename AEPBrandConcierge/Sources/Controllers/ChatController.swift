@@ -763,10 +763,8 @@ final class ChatController: ObservableObject {
 
         // Accumulators are used to handle the progressive building up of response content from the server
         // and to be able to effectively do a diff of what has already been received and what is new.
-        var accumulatedContent = ""
-        var latestElements: [MultimodalElement] = []
+        var assembled = ConciergeTurn()
         var completedElements: [MultimodalElement] = []
-        var responseStartedDispatched = false
         let attemptStartedAt = Date()
         let callbackSequencer = MainActorCallbackSequencer()
 
@@ -832,61 +830,26 @@ final class ChatController: ObservableObject {
                     // the Android `hasVisibleContent` gate so cards-only responses still produce
                     // a paired responseStarted/responseCompleted, and pure heartbeat chunks
                     // (response present but empty) do not.
-                    let chunkMessage = payload.response?.message ?? ""
-                    let chunkElements = payload.response?.multimodalElements?.elements ?? []
-                    let hasVisibleContent = !chunkMessage.isEmpty || !chunkElements.isEmpty
-                    if hasVisibleContent && !responseStartedDispatched {
-                        responseStartedDispatched = true
+                    if assembled.apply(payload) {
                         self.dispatchTrackingEvent(.responseStarted(
-                            conversationId: payload.conversationId ?? "unknown",
-                            interactionId: payload.interactionId ?? "unknown"
+                            conversationId: assembled.conversationId ?? "unknown",
+                            interactionId: assembled.interactionId ?? "unknown"
                         ))
                     }
 
-                    // Handle messages
-                    if let message = payload.response?.message {
-                        if state == ConciergeConstants.StreamState.IN_PROGRESS {
-                            accumulatedContent += message
-                            Log.trace(label: self.LOG_TAG, "SSE chunk (len=\(message.count)): \"\(message)\"")
-                            Log.trace(label: self.LOG_TAG, "Accumulated (len=\(accumulatedContent.count))")
-
-                            // Update the streaming message with accumulated content (preserve id)
-                            self.updatePlaceholder(of: turn) { current in
-                                current.messageBody = accumulatedContent
-                                current.payload = payload
-                            }
-                        } else if state == ConciergeConstants.StreamState.COMPLETED {
-                            let fullText = message
-                            Log.trace(label: self.LOG_TAG, "Completion received. Full text length=\(fullText.count)")
-
-                            self.updatePlaceholder(of: turn) { current in
-                                current.messageBody = fullText
-                                current.payload = payload
-                            }
-
-                            accumulatedContent = fullText
+                    // Update the streaming message with the assembled text (preserve id)
+                    if payload.response != nil, payload.isInProgress || payload.isCompleted {
+                        Log.trace(label: self.LOG_TAG, "Assembled text (len=\(assembled.text.count), state=\(state ?? "n/a"))")
+                        self.updatePlaceholder(of: turn) { current in
+                            current.messageBody = assembled.text
+                            current.payload = payload
                         }
                     }
 
-                    // Retain nonempty elements for legacy built-in buffering.
-                    if let elements = payload.response?.multimodalElements?.elements, !elements.isEmpty {
-                        latestElements = elements
-                    }
-
-                    // Capture prompt suggestions if present
-                    if let suggestions = payload.response?.promptSuggestions, !suggestions.isEmpty {
-                        self.latestPromptSuggestions = suggestions
-                    }
-
-                    // Capture sources from payload as they arrive (used on completion)
-                    if let sources = payload.response?.sources {
-                        self.latestSources = sources
-                    }
-
-                    // Capture link hints from payload as they arrive (used on completion)
-                    if let hints = payload.response?.linkHints, !hints.isEmpty {
-                        self.latestLinkHints = hints
-                    }
+                    // Captured for rendering on completion
+                    self.latestPromptSuggestions = assembled.promptSuggestions
+                    self.latestSources = assembled.sources
+                    self.latestLinkHints = assembled.linkHints
                 }
             },
             onComplete: { [weak self] error in
@@ -952,10 +915,10 @@ final class ChatController: ObservableObject {
                         self.endTurn(turn)
                     } else {
                         let plan = ResponseElementResolver.resolve(
-                            completedElements.isEmpty ? latestElements : completedElements,
+                            completedElements.isEmpty ? assembled.elements : completedElements,
                             turnId: turn.placeholderId, nativeCards: self.nativeCards,
                             allowsNativeCards: !completedElements.isEmpty)
-                        guard !accumulatedContent.isEmpty || plan.hasRenderableElements else {
+                        guard !assembled.text.isEmpty || plan.hasRenderableElements else {
                             outcome = .invalidResponseData
                             self.discardPlaceholder(of: turn)
                             if turn.rendersFailures {
@@ -972,8 +935,8 @@ final class ChatController: ObservableObject {
                         }
 
                         let completed = self.updatePlaceholder(of: turn) { current in
-                            current.messageBody = accumulatedContent
-                            current.shouldSpeakMessage = !accumulatedContent.isEmpty
+                            current.messageBody = assembled.text
+                            current.shouldSpeakMessage = !assembled.text.isEmpty
                             if !self.latestSources.isEmpty {
                                 Log.trace(label: self.LOG_TAG, "Using sources: count=\(self.latestSources.count)")
                                 current.sources = self.latestSources
@@ -996,7 +959,7 @@ final class ChatController: ObservableObject {
                         // placeholder rather than leave an empty one above the cards. Deliberately
                         // after the guard above: removing it on a path that then returns early
                         // would strip the turn's only message and still report success.
-                        if accumulatedContent.isEmpty {
+                        if assembled.text.isEmpty {
                             self.discardPlaceholder(of: turn)
                         }
                         self.dispatchTrackingEvent(.responseCompleted(
@@ -1004,7 +967,7 @@ final class ChatController: ObservableObject {
                             interactionId: completedPayload.interactionId ?? "unknown"
                         ))
 
-                        self.appendElements(plan, payload: completedPayload, sessionId: resolvedSessionID,
+                        self.appendElements(plan, payload: completedPayload, sessionId: requestContext.sessionID,
                                             promptSuggestions: self.latestPromptSuggestions)
 
                         self.endTurn(turn)
