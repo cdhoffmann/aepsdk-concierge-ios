@@ -33,16 +33,7 @@ struct ResponseElementPlan {
     }
 
     var cardsRenderedEvent: ConciergeTrackingEvent? {
-        let elements: [[String: Any]] = productElements.compactMap { element in
-            guard let entityInfo = element.entityInfo else { return nil }
-            var result: [String: Any] = [:]
-            if let name = entityInfo.productName { result["productName"] = name }
-            if let url = entityInfo.productPageURL { result["productPageURL"] = url }
-            if let price = entityInfo.productPrice { result["productPrice"] = price }
-            return result
-        }
-        guard !elements.isEmpty else { return nil }
-        return .cardsRendered(displayMode: elements.count == 1 ? "single" : "carousel", elements: elements)
+        ConciergeTrackingEvent.cardsRendered(for: productElements)
     }
 
     private var productElements: [MultimodalElement] {
@@ -106,6 +97,33 @@ struct ResponseElementPlan {
     }
 }
 
+/// How a multimodal element is shown. The one classification rule for the SDK's chat UI and for
+/// `ConciergeElement`, so both agree on what a response contains.
+enum MultimodalElementKind {
+    /// A `custom` element with a non-blank `rendererId`.
+    case custom(rendererId: String)
+    /// A `ctaButton` element with `entity_info.primary`.
+    case ctaButton(ActionButton)
+    /// Any other element.
+    case productCard
+    /// A `custom` element without a `rendererId`, or a `ctaButton` without `entity_info.primary`.
+    case invalid
+}
+
+extension MultimodalElement {
+    var kind: MultimodalElementKind {
+        if type == "custom" {
+            guard let id = rendererId, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .invalid }
+            return .custom(rendererId: id)
+        }
+        if elementType == .ctaButton {
+            guard let action = entityInfo?.primary else { return .invalid }
+            return .ctaButton(action)
+        }
+        return .productCard
+    }
+}
+
 @MainActor
 enum ResponseElementResolver {
     private static let LOG_TAG = "ResponseElementResolver"
@@ -116,13 +134,16 @@ enum ResponseElementResolver {
         targets.reserveCapacity(elements.count)
         var occurrencePositions: [NativeCardStore.Occurrence: Int] = [:]
         for (position, element) in elements.enumerated() {
-            if element.type == "custom" {
-                guard let id = element.rendererId,
-                      !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    Log.warning(label: LOG_TAG,
-                                "Rejected custom element at position \(position): missing or invalid rendererId.")
-                    continue
-                }
+            switch element.kind {
+            case .invalid:
+                Log.warning(label: LOG_TAG, element.type == "custom"
+                    ? "Rejected custom element at position \(position): missing or invalid rendererId."
+                    : "Skipping ctaButton element '\(element.id ?? "unknown")': missing entity_info.primary.")
+            case .ctaButton(let action):
+                targets.append(.cta(action))
+            case .productCard:
+                targets.append(.product(element))
+            case .custom(let id):
                 guard let registration = NativeCardRegistry.registration(for: id) else {
                     Log.warning(label: LOG_TAG, "Skipping custom element at position \(position): no renderer registered for rendererId '\(id)'.")
                     continue
@@ -148,16 +169,6 @@ enum ResponseElementResolver {
                                                                          registration: registration)))
                     }
                 }
-                continue
-            }
-            if element.elementType == .ctaButton {
-                if let action = element.entityInfo?.primary {
-                    targets.append(.cta(action))
-                } else {
-                    Log.warning(label: LOG_TAG, "Skipping ctaButton element '\(element.id ?? "unknown")': missing entity_info.primary.")
-                }
-            } else {
-                targets.append(.product(element))
             }
         }
         return ResponseElementPlan(targets: targets)

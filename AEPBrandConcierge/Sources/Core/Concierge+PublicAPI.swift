@@ -296,7 +296,7 @@ extension Concierge {
     static func resolveSession(configuration: ConciergeConfiguration, preservingContext: Bool = false) -> ConciergeChatSession {
         let preparation = prepareSession(configuration: configuration, preservingContext: preservingContext)
         if let existing = preparation.existing { return existing }
-        let session = makeSession(configuration: configuration, sessionID: preparation.sessionID)
+        let session = makeSession(configuration: configuration)
         currentSession = session
         return session
     }
@@ -310,6 +310,7 @@ extension Concierge {
 
         if let existing = currentSession,
            sessionWasActive,
+           !existing.controller.conversation.state.isClosed,
            existing.sessionID == sessionID,
            existing.matches(configuration: configuration, title: resolvedTitle, subtitle: resolvedSubtitle) {
             return (existing, sessionID)
@@ -321,12 +322,6 @@ extension Concierge {
                 ConciergeXDMContextStore.shared.clear()
             } else if existing.sessionID != sessionID {
                 ConciergeXDMContextStore.shared.discardExpiredContext(for: sessionID)
-                if sessionWasActive,
-                   existing.controller.lastTurnSessionID == sessionID,
-                   existing.matches(configuration: configuration, title: resolvedTitle, subtitle: resolvedSubtitle) {
-                    existing.rebind(to: sessionID)
-                    return (existing, sessionID)
-                }
             }
         }
 
@@ -345,7 +340,7 @@ extension Concierge {
             return nil
         }
         let session = preparation.existing ?? makeSession(
-            configuration: configuration, sessionID: preparation.sessionID, identityGeneration: generation)
+            configuration: configuration, identityGeneration: generation)
         let accepted = boundary.synchronized {
             guard boundary.admits(generation) else { return false }
             currentSession = session
@@ -384,10 +379,9 @@ extension Concierge {
     }
 
     @MainActor
-    static func makeSession(configuration: ConciergeConfiguration, sessionID: String, identityGeneration: Int? = nil) -> ConciergeChatSession {
+    static func makeSession(configuration: ConciergeConfiguration, identityGeneration: Int? = nil) -> ConciergeChatSession {
         ConciergeChatSession(
             configuration: configuration,
-            sessionID: sessionID,
             title: chatTitle,
             subtitle: chatSubtitle,
             speechCapturer: speechCapturer,

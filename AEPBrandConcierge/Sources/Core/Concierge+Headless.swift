@@ -14,112 +14,39 @@ import AEPCore
 import AEPServices
 import Foundation
 
-/// Public API for apps that render their own chat UI on top of `ConciergeConversationCore`.
+/// Public API for apps that render their own chat UI.
 public extension Concierge {
 
-    /// Creates a conversation core for `surfaces`, for apps that render their own chat UI.
+    /// Opens a conversation for `surfaces`, for apps that render their own chat UI.
     ///
     /// Resolves configuration the same way `show(surfaces:)` does, so the Concierge extension,
-    /// Edge and Edge Identity must be registered. Each call returns a new core; keep one per
-    /// on-screen conversation.
+    /// Edge and Edge Identity must be registered. One conversation is live per surface set: this one
+    /// replaces the previous conversation on the same surfaces, headless or the SDK chat UI's, which
+    /// closes with `.replaced`. Conversations on other surfaces stay live; all share one backend
+    /// session, and a data handoff goes to the one most recently opened or used. It resumes the
+    /// persisted backend session if it is still active, or starts a new one, and keeps that session
+    /// for its whole life. It runs turns, keeps the transcript in `messages`, reports turn
+    /// analytics, and can receive `Concierge.sendDataHandoff(...)`. Call `close()` when done;
+    /// replacement, session expiry and identity reset also close it.
     ///
     /// - Throws: `ConciergeError.configurationUnavailable` if configuration can't be resolved (ex:
     ///   Edge Identity not yet ready, or an identity reset happened while resolving).
-    static func conversationCore(surfaces: [String]) async throws -> ConciergeConversationCore {
-        try await withCheckedThrowingContinuation { continuation in
+    @MainActor
+    static func conversation(surfaces: [String]) async throws -> ConciergeConversation {
+        let (config, generation) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(ConciergeConfiguration, Int), Error>) in
             fetchChatConfiguration(forSurfaces: surfaces,
                                    onFailure: { continuation.resume(throwing: ConciergeError.configurationUnavailable) },
-                                   completion: { config, generation in
-                                       continuation.resume(returning: ConciergeConversationCore(
-                                           configuration: config,
-                                           urlSessionConfiguration: resolvedURLSessionConfiguration(),
-                                           identityGeneration: generation))
-                                   })
+                                   completion: { config, generation in continuation.resume(returning: (config, generation)) })
         }
-    }
-
-    /// Dispatches a Brand Concierge analytics event from a custom chat UI.
-    ///
-    /// Events reach Edge only after `setEdgeTrackingEnabled(enable: true)`, exactly as they do for
-    /// the SDK's chat UI, so reporting built on Concierge events works the same for both.
-    static func track(_ event: ConciergeAnalyticsEvent) {
-        for trackingEvent in event.trackingEvents {
-            MobileCore.dispatch(event: trackingEvent.toEvent())
-        }
-    }
-}
-
-/// An analytics event a custom chat UI reports through `Concierge.track(_:)`.
-///
-/// Mirrors the events the SDK's chat UI dispatches. Feedback is not listed: it is tracked by
-/// `ConciergeConversationCore.sendFeedback`. When using `ConciergeConversationCore.sendTurn`, the
-/// turn events (`querySubmitted`, `responseStarted`, `responseCompleted`, `productsRendered`,
-/// `errorOccurred`) are reported for you; track only user interactions.
-public enum ConciergeAnalyticsEvent {
-    case chatOpened
-    case chatClosed(durationMillis: Int64)
-    /// Report before calling `send`. Pass the same `xdmFields` given to `send`, if any.
-    case querySubmitted(query: String, xdmFields: [String: Any])
-    /// Report on the first chunk that carries text or product elements.
-    case responseStarted(conversationId: String?, interactionId: String?)
-    /// Report on the `COMPLETED` chunk.
-    case responseCompleted(conversationId: String?, interactionId: String?)
-    /// Report once per turn when product cards are shown.
-    case productsRendered([MultimodalElement])
-    /// A product card tap. Also reports `linkClicked` for the product page URL.
-    case productClicked(MultimodalElement)
-    /// A CTA button tap (ex: "Buy Now"). Also reports `linkClicked`.
-    case ctaButtonClicked(label: String, url: String)
-    case linkClicked(url: String)
-    case promptSuggestionClicked(String)
-    case errorOccurred(String)
-
-    var trackingEvents: [ConciergeTrackingEvent] {
-        typealias Origin = ConciergeConstants.TrackingEvent.LinkClickOrigin
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
-        switch self {
-        case .chatOpened:
-            return [.chatOpened(epochTime: now)]
-        case .chatClosed(let durationMillis):
-            return [.chatClosed(epochTime: now, durationMillis: durationMillis)]
-        case .querySubmitted(let query, let xdmFields):
-            return [.querySubmitted(query: query, xdmFields: xdmFields)]
-        case .responseStarted(let conversationId, let interactionId):
-            return [.responseStarted(conversationId: conversationId ?? "unknown", interactionId: interactionId ?? "unknown")]
-        case .responseCompleted(let conversationId, let interactionId):
-            return [.responseCompleted(conversationId: conversationId ?? "unknown", interactionId: interactionId ?? "unknown")]
-        case .productsRendered(let elements):
-            let dicts = elements.compactMap { element -> [String: Any]? in
-                guard let info = element.entityInfo else { return nil }
-                var dict: [String: Any] = [:]
-                if let name = info.productName { dict["productName"] = name }
-                if let url = info.productPageURL { dict["productPageURL"] = url }
-                if let price = info.productPrice { dict["productPrice"] = price }
-                return dict
-            }
-            guard !dicts.isEmpty else { return [] }
-            return [.cardsRendered(displayMode: dicts.count == 1 ? "single" : "carousel", elements: dicts)]
-        case .productClicked(let element):
-            let info = element.entityInfo
-            var dict: [String: Any] = [:]
-            if let name = info?.productName { dict["productName"] = name }
-            if let description = info?.productDescription { dict["productDescription"] = description }
-            if let url = info?.productPageURL { dict["productPageURL"] = url }
-            if let price = info?.productPrice { dict["productPrice"] = price }
-            if let badge = info?.productBadge { dict["productBadge"] = badge }
-            var events: [ConciergeTrackingEvent] = [.cardClicked(element: dict)]
-            if let url = info?.productPageURL {
-                events.append(.linkClicked(url: url, origin: Origin.PRODUCT_CARD))
-            }
-            return events
-        case .ctaButtonClicked(let label, let url):
-            return [.ctaButtonClicked(label: label, linkUrl: url), .linkClicked(url: url, origin: Origin.CTA)]
-        case .linkClicked(let url):
-            return [.linkClicked(url: url, origin: Origin.INLINE)]
-        case .promptSuggestionClicked(let suggestion):
-            return [.promptSuggestionClicked(suggestion: suggestion)]
-        case .errorOccurred(let message):
-            return [.errorOccurred(errorMessage: message)]
-        }
+        guard ConciergeIdentityBoundary.shared.admits(generation) else { throw ConciergeError.configurationUnavailable }
+        // Pins the session exactly as presenting the chat UI does: resumes it if active, else starts one.
+        let core = ConciergeConversationCore(configuration: config,
+                                             urlSessionConfiguration: resolvedURLSessionConfiguration(),
+                                             buffersSSEFrames: true,
+                                             identityGeneration: generation)
+        let conversation = ConciergeConversation(core: core, dispatch: { MobileCore.dispatch(event: $0) })
+        ConciergeActiveConversation.activate(conversation)
+        conversation.report(.sessionInitialized)
+        return conversation
     }
 }

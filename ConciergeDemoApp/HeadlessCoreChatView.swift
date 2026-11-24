@@ -13,15 +13,15 @@
 import SwiftUI
 import AEPBrandConcierge
 
-/// Headless (thin core + turn assembler) POC: a chat UI the *app* owns, built only on the public
-/// `ConciergeConversationCore.sendTurn` + `Concierge.track`. The SDK assembles each response and
-/// reports turn analytics; the app owns the transcript, rendering and tap tracking.
+/// Headless POC: a chat UI the *app* owns, built only on the public `ConciergeConversation`. The
+/// SDK runs turns, keeps the transcript in `messages` and reports turn analytics; the app renders
+/// and reports taps with `track(_:)`. Checkout handoffs arrive through `Concierge.sendDataHandoff`.
 struct HeadlessCoreChatView: View {
     let surfaces: [String]
     @Binding var useMockResponses: Bool
     var handleLink: (URL) -> Bool
 
-    @StateObject private var model = HeadlessCoreChatModel()
+    @StateObject private var loader = HeadlessConversationLoader()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,139 +29,87 @@ struct HeadlessCoreChatView: View {
                 .font(.footnote)
                 .padding(.horizontal)
             Divider()
-            switch model.loadState {
+            switch loader.loadState {
             case .loading:
                 ProgressView().frame(maxHeight: .infinity)
             case .failed(let message):
                 VStack(spacing: 12) {
                     Text(message).multilineTextAlignment(.center)
-                    Button("Retry") { Task { await model.load(surfaces: surfaces) } }
+                    Button("Retry") { Task { await loader.load(surfaces: surfaces) } }
                 }
                 .padding()
                 .frame(maxHeight: .infinity)
-            case .ready:
-                HeadlessCoreTranscriptView(model: model, handleLink: handleLink)
+            case .ready(let conversation):
+                HeadlessTranscriptView(conversation: conversation, handleLink: handleLink,
+                                       reload: { Task { await loader.load(surfaces: surfaces) } })
             }
         }
-        .task { await model.load(surfaces: surfaces) }
+        .task { await loader.load(surfaces: surfaces) }
     }
-}
-
-// MARK: - App-owned state (what the customer writes)
-
-struct HeadlessCoreMessage: Identifiable {
-    enum Role { case user, agent }
-
-    let id = UUID()
-    let role: Role
-    var userText = ""
-    var turn = ConciergeTurn()
-    var feedbackSentiment: FeedbackSentiment?
-    var failed = false
-
-    var text: String { role == .user ? userText : turn.text }
-    var products: [MultimodalElement] { turn.products }
-    var ctas: [ActionButton] { turn.ctaButtons }
-    var suggestions: [String] { turn.isComplete ? turn.promptSuggestions : [] }
-    var sources: [Source] { turn.isComplete ? turn.sources : [] }
-    var isComplete: Bool { failed || turn.isComplete }
-    var feedbackEligible: Bool { turn.feedbackEligible }
 }
 
 @MainActor
-final class HeadlessCoreChatModel: ObservableObject {
-    enum LoadState { case loading, ready, failed(String) }
+final class HeadlessConversationLoader: ObservableObject {
+    enum LoadState { case loading, ready(ConciergeConversation), failed(String) }
 
     @Published private(set) var loadState: LoadState = .loading
-    @Published private(set) var messages: [HeadlessCoreMessage] = []
-    @Published private(set) var isProcessing = false
-
-    private var core: ConciergeConversationCore?
-    private var turnTask: Task<Void, Never>?
-    private var openedAt: Date?
 
     func load(surfaces: [String]) async {
+        if case .ready(let old) = loadState { old.close() }
         loadState = .loading
         do {
-            core = try await Concierge.conversationCore(surfaces: surfaces)
-            loadState = .ready
+            loadState = .ready(try await Concierge.conversation(surfaces: surfaces))
         } catch {
             loadState = .failed(error.localizedDescription)
         }
-    }
-
-    func opened() {
-        openedAt = Date()
-        Concierge.track(.chatOpened)
-    }
-
-    func closed() {
-        let millis = openedAt.map { Int64(Date().timeIntervalSince($0) * 1000) } ?? 0
-        Concierge.track(.chatClosed(durationMillis: millis))
-    }
-
-    func send(_ text: String) {
-        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let core, !query.isEmpty, !isProcessing else { return }
-        if core.isEnded {
-            loadState = .failed("Conversation ended after an identity reset.")
-            return
-        }
-
-        messages.append(HeadlessCoreMessage(role: .user, userText: query))
-        messages.append(HeadlessCoreMessage(role: .agent))
-        let index = messages.count - 1
-        isProcessing = true
-
-        // querySubmitted, responseStarted/Completed, cardsRendered and errorOccurred are reported by sendTurn.
-        turnTask = Task {
-            do {
-                for try await turn in core.sendTurn(query) {
-                    messages[index].turn = turn
-                }
-            } catch {
-                messages[index].failed = true
-            }
-            isProcessing = false
-        }
-    }
-
-    func cancel() {
-        turnTask?.cancel()
-    }
-
-    func sendFeedback(for id: UUID, sentiment: FeedbackSentiment) {
-        guard let core, let index = messages.firstIndex(where: { $0.id == id }) else { return }
-        messages[index].feedbackSentiment = sentiment
-        core.sendFeedback(conversationId: messages[index].turn.conversationId,
-                          interactionId: messages[index].turn.interactionId,
-                          sentiment: sentiment)
     }
 }
 
 // MARK: - App-owned UI
 
-private struct HeadlessCoreTranscriptView: View {
-    @ObservedObject var model: HeadlessCoreChatModel
+private struct HeadlessTranscriptView: View {
+    @ObservedObject var conversation: ConciergeConversation
     var handleLink: (URL) -> Bool
+    var reload: () -> Void
 
     @State private var draft = ""
     @Environment(\.openURL) private var openURL
 
+    private var isResponding: Bool { conversation.state == .responding }
+
     var body: some View {
         VStack(spacing: 0) {
+            if case .closed(let reason) = conversation.state {
+                VStack(spacing: 12) {
+                    Text("Conversation ended (\(String(describing: reason))).")
+                    Button("Start a new conversation", action: reload)
+                }
+                .padding()
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        if model.messages.isEmpty { welcome }
-                        ForEach(model.messages) { message in
+                        if conversation.messages.isEmpty { welcome }
+                        ForEach(conversation.messages) { message in
                             row(for: message).id(message.id)
+                        }
+                        if isResponding, conversation.messages.last?.role != .agent || conversation.messages.last?.isStreaming == false {
+                            ProgressView().padding(.vertical, 4)
+                        }
+                        if case .failed(let error) = conversation.state {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Label("We couldn't reach the assistant (\(error.localizedDescription)).",
+                                      systemImage: "exclamationmark.triangle")
+                                    .foregroundColor(.red)
+                                Button("Retry") { conversation.retry() }
+                                    .buttonStyle(.bordered)
+                            }
                         }
                     }
                     .padding()
                 }
-                .onChange(of: model.messages.last?.text) { _ in
-                    guard let id = model.messages.last?.id else { return }
+                .onChange(of: conversation.messages.last?.text) { _ in
+                    guard let id = conversation.messages.last?.id else { return }
                     proxy.scrollTo(id, anchor: .bottom)
                 }
             }
@@ -169,31 +117,37 @@ private struct HeadlessCoreTranscriptView: View {
             composer
         }
         .environment(\.openURL, OpenURLAction { url in
-            Concierge.track(.linkClicked(url: url.absoluteString))
+            conversation.track(.linkClicked(url: url.absoluteString))
             return handleLink(url) ? .handled : .systemAction
         })
-        .onAppear { model.opened() }
-        .onDisappear { model.closed() }
+        .onAppear { conversation.track(.opened) }
+        .onDisappear { conversation.track(.closed) }
     }
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Headless Concierge (core + turns)").font(.title2.bold())
-            Text("Rendered by the app from assembled ConciergeTurn values.")
+            Text("Headless Concierge").font(.title2.bold())
+            Text("Rendered by the app from ConciergeConversation.messages.")
                 .font(.subheadline).foregroundColor(.secondary)
             ForEach([BuyNowMockURLProtocol.productCardsPrompt, "What can you help me with?"], id: \.self) { prompt in
                 Button(prompt) {
-                    Concierge.track(.promptSuggestionClicked(prompt))
-                    model.send(prompt)
+                    conversation.track(.promptSuggestionClicked(prompt))
+                    conversation.send(prompt)
                 }
                 .buttonStyle(.bordered)
+                .disabled(isResponding)
             }
         }
     }
 
     @ViewBuilder
-    private func row(for message: HeadlessCoreMessage) -> some View {
-        if message.role == .user {
+    private func row(for message: ConciergeMessage) -> some View {
+        if message.role == .app {
+            Text(message.text)
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity)
+        } else if message.role == .user {
             HStack {
                 Spacer(minLength: 40)
                 Text(message.text)
@@ -206,43 +160,49 @@ private struct HeadlessCoreTranscriptView: View {
         }
     }
 
-    private func agentRow(_ message: HeadlessCoreMessage) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if message.failed {
-                Label("We couldn't reach the assistant. Try again.", systemImage: "exclamationmark.triangle")
-                    .foregroundColor(.red)
-            } else if message.text.isEmpty && !message.isComplete {
-                ProgressView().padding(.vertical, 4)
-            } else {
-                Text(markdown(message.text))
-            }
-            if !message.sources.isEmpty {
+    private func agentRow(_ message: ConciergeMessage) -> some View {
+        let products = message.elements.compactMap { element -> ConciergeProductCard? in
+            if case .productCard(let card) = element { return card }
+            return nil
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(markdown(message.text))
+            if !message.isStreaming {
                 ForEach(message.sources, id: \.self) { source in
-                    Button("[\(source.citationNumber)] \(source.title)") { open(source.url) }
-                        .font(.caption)
+                    Button("[\(source.citationNumber)] \(source.title)") {
+                        conversation.track(.sourceClicked(source))
+                        open(source.url)
+                    }
+                    .font(.caption)
                 }
             }
-            if !message.products.isEmpty {
+            if !products.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 12) {
-                        ForEach(Array(message.products.enumerated()), id: \.offset) { productCard($0.element) }
+                        ForEach(Array(products.enumerated()), id: \.offset) { productCard($0.element) }
                     }
                 }
             }
-            ForEach(message.ctas, id: \.text) { cta in
-                Button(cta.text) { tapCTA(cta) }.buttonStyle(.borderedProminent)
+            ForEach(Array(message.elements.enumerated()), id: \.offset) { _, element in
+                if case .ctaButton(let label, let url, _) = element {
+                    Button(label) {
+                        conversation.track(.ctaClicked(label: label, url: url))
+                        if let url { open(url) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
-            ForEach(message.suggestions, id: \.self) { suggestion in
+            ForEach(message.promptSuggestions, id: \.self) { suggestion in
                 Button {
-                    Concierge.track(.promptSuggestionClicked(suggestion))
-                    model.send(suggestion)
+                    conversation.track(.promptSuggestionClicked(suggestion))
+                    conversation.send(suggestion)
                 } label: {
                     Label(suggestion, systemImage: "arrow.turn.down.right").font(.footnote)
                 }
                 .buttonStyle(.bordered)
-                .disabled(model.isProcessing)
+                .disabled(isResponding)
             }
-            if message.feedbackEligible {
+            if message.feedbackEnabled {
                 HStack(spacing: 16) {
                     thumb(.positive, symbol: "hand.thumbsup", message: message)
                     thumb(.negative, symbol: "hand.thumbsdown", message: message)
@@ -255,40 +215,42 @@ private struct HeadlessCoreTranscriptView: View {
         .cornerRadius(12)
     }
 
-    private func thumb(_ sentiment: FeedbackSentiment, symbol: String, message: HeadlessCoreMessage) -> some View {
+    private func thumb(_ sentiment: FeedbackSentiment, symbol: String, message: ConciergeMessage) -> some View {
         Button {
-            model.sendFeedback(for: message.id, sentiment: sentiment)
+            conversation.sendFeedback(messageId: message.id, ConciergeFeedback(sentiment: sentiment))
         } label: {
-            Image(systemName: message.feedbackSentiment == sentiment ? symbol + ".fill" : symbol)
+            Image(systemName: message.feedback == sentiment ? symbol + ".fill" : symbol)
         }
-        .disabled(message.feedbackSentiment != nil)
+        .disabled(message.feedback != nil)
     }
 
-    private func productCard(_ element: MultimodalElement) -> some View {
-        let info = element.entityInfo
-        return VStack(alignment: .leading, spacing: 6) {
-            AsyncImage(url: info?.productImageURL.flatMap(URL.init(string:))) { image in
+    private func productCard(_ card: ConciergeProductCard) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            AsyncImage(url: card.productImageURL.flatMap(URL.init(string:))) { image in
                 image.resizable().scaledToFit()
             } placeholder: {
                 Color(UIColor.tertiarySystemFill)
             }
             .frame(width: 160, height: 120)
             .onTapGesture {
-                Concierge.track(.productClicked(element))
-                if let url = info?.productPageURL { open(url, tracked: true) }
+                conversation.track(.productCardClicked(card))
+                if let url = card.productPageURL { open(url) }
             }
-            if let badge = info?.productBadge { Text(badge).font(.caption2.bold()).foregroundColor(.orange) }
-            Text(info?.productName ?? "").font(.subheadline.bold()).lineLimit(2)
-            if let price = info?.productPrice {
+            if let badge = card.productBadge { Text(badge).font(.caption2.bold()).foregroundColor(.orange) }
+            Text(card.productName ?? "").font(.subheadline.bold()).lineLimit(2)
+            if let price = card.productPrice {
                 HStack(spacing: 4) {
                     Text(price).font(.subheadline)
-                    if let was = info?.productWasPrice { Text(was).font(.caption).strikethrough().foregroundColor(.secondary) }
+                    if let was = card.productWasPrice { Text(was).font(.caption).strikethrough().foregroundColor(.secondary) }
                 }
             }
-            ForEach([info?.primary, info?.secondary].compactMap { $0 }, id: \.text) { cta in
-                Button(cta.text) { tapCTA(cta) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+            ForEach([card.primary, card.secondary].compactMap { $0 }, id: \.text) { action in
+                Button(action.text) {
+                    conversation.track(.productActionClicked(card, action))
+                    if let url = action.url { open(url) }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
             }
         }
         .frame(width: 160, alignment: .leading)
@@ -301,11 +263,11 @@ private struct HeadlessCoreTranscriptView: View {
             TextField("Ask anything", text: $draft)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(send)
-            if model.isProcessing {
-                Button { model.cancel() } label: { Image(systemName: "stop.circle.fill") }
+            if isResponding {
+                Button { conversation.cancel() } label: { Image(systemName: "stop.circle.fill") }
             } else {
                 Button(action: send) { Image(systemName: "arrow.up.circle.fill") }
-                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || conversation.state.isClosed)
             }
         }
         .font(.title3)
@@ -313,20 +275,12 @@ private struct HeadlessCoreTranscriptView: View {
     }
 
     private func send() {
-        model.send(draft)
-        draft = ""
+        if conversation.send(draft) == .accepted { draft = "" }
     }
 
-    private func tapCTA(_ cta: ActionButton) {
-        guard let url = cta.url else { return }
-        Concierge.track(.ctaButtonClicked(label: cta.text, url: url))
-        open(url, tracked: true)
-    }
-
-    /// `tracked` skips the generic link event when a more specific one already reported it.
-    private func open(_ string: String, tracked: Bool = false) {
+    /// Taps are tracked by the caller with the specific interaction, so this only opens the URL.
+    private func open(_ string: String) {
         guard let url = URL(string: string) else { return }
-        if !tracked { Concierge.track(.linkClicked(url: string)) }
         if !handleLink(url) { openURL(url) }
     }
 

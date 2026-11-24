@@ -205,11 +205,16 @@ public class Concierge: NSObject, Extension {
                 where !controllers.contains(where: { $0 === controller }) {
                 controllers.append(controller)
             }
-            let hadActiveTurn = controllers.contains { $0.isProcessing }
+            // Only a headless conversation is reset here; a chat UI's goes with its controller.
+            let headless = ConciergeActiveConversation.live.filter { $0.presenter == nil }
+            let hadActiveTurn = controllers.contains { $0.isProcessing } || headless.contains { $0.isResponding }
             let conversationID = controllers.compactMap { $0.conversationID }.last
+                ?? headless.compactMap { $0.conversationId }.last
             let hadConversation = snapshot.1 != nil || snapshot.2 ||
-                controllers.contains { $0.hasConversationStarted } || hadActiveTurn
+                controllers.contains { $0.hasConversationStarted } ||
+                headless.contains { !$0.messages.isEmpty } || hadActiveTurn
             controllers.forEach { $0.endConversationForIdentityReset() }
+            headless.forEach { $0.endForIdentityReset() }
             Concierge.currentSession = nil
             // Await an actual owner-queue drain, including any drain already in progress.
             // Deferred old-user callbacks must settle before ended/readiness is published.
@@ -300,7 +305,7 @@ public class Concierge: NSObject, Extension {
                   !readinessCheckPending else { return nil }
             return SessionManager.shared.getOrCreateSessionId()
         }
-        guard let sessionID else { return }
+        guard sessionID != nil else { return }
         @MainActor func configuration(_ surfaces: [String]) -> ConciergeConfiguration {
             ConciergeConfiguration(
                     consentCollectValue: consent, datastream: datastream, ecid: ecid,
@@ -308,7 +313,7 @@ public class Concierge: NSObject, Extension {
                     region: configState?.conciergeRegion, surfaces: surfaces)
         }
         @MainActor func session(_ surfaces: [String]) -> ConciergeChatSession {
-            Concierge.makeSession(configuration: configuration(surfaces), sessionID: sessionID, identityGeneration: generation)
+            Concierge.makeSession(configuration: configuration(surfaces), identityGeneration: generation)
         }
         let overlaySession = Concierge.resetOverlaySurfaces.map(session)
         let uikitSession = parent == nil ? nil : Concierge.resetUIKitSurfaces.map { surfaces in
@@ -529,18 +534,8 @@ public class Concierge: NSObject, Extension {
             return
         }
 
-        guard !payload.xdmFields.isEmpty else {
-            dispatch(event: createDataHandoffResponseEvent(for: event, error: .emptyXdmFields))
-            return
-        }
-
-        guard JSONSerialization.isValidJSONObject(payload.xdmFields) else {
-            dispatch(event: createDataHandoffResponseEvent(for: event, error: .invalidXdmFieldValue))
-            return
-        }
-
-        guard payload.xdmFields[ConciergeConstants.Request.Keys.IDENTITY_MAP] == nil else {
-            dispatch(event: createDataHandoffResponseEvent(for: event, error: .reservedKeyCollision))
+        if let invalid = ConciergeDataHandoffEvent.validationError(for: payload.xdmFields) {
+            dispatch(event: createDataHandoffResponseEvent(for: event, error: invalid))
             return
         }
 
@@ -564,20 +559,20 @@ public class Concierge: NSObject, Extension {
             await taskGate?(event)
             #endif
             guard boundary.synchronized({ unsettledHandoffs[event.id]?.generation == generation }) else { return }
-            // `resolveSession` gates reuse on `isSessionActive`, so a handoff has to clear the same
-            // bar - an expired session's controller is still in memory but no longer valid.
+            // A handoff goes to the most recently used live conversation: the SDK chat UI's or an app's headless one.
+            // A conversation whose session expired closes instead of starting a turn on a stale session.
             guard ConciergeIdentityBoundary.shared.admits(generation),
-                  let controller = Concierge.currentSession?.controller,
-                  SessionManager.shared.isSessionActive else {
+                  let target = ConciergeActiveConversation.current,
+                  !target.closeIfSessionExpired() else {
                 settleHandoff(event, generation: generation, error: .noActiveSession)
                 return
             }
 
-            // The controller owns chat state, so it is the single authority on whether a turn can
+            // The conversation owns turn state, so it is the single authority on whether a turn can
             // start. It reports back `false` without side effects when one is already in flight.
-            let started = controller.handleDataHandoff(routingHint: payload.routingHint,
-                                                       xdmFields: payload.xdmFields,
-                                                       localMessage: payload.localMessage) { serviceError in
+            let started = target.deliverHandoff(routingHint: payload.routingHint,
+                                                xdmFields: payload.xdmFields,
+                                                localMessage: payload.localMessage) { serviceError in
                 // `self` is captured strongly on purpose. This closure lives only for one turn and
                 // the extension is an app-lifetime singleton, so there is no retain cycle. A weak
                 // capture could drop the response event entirely.

@@ -318,12 +318,15 @@ struct ContentView: View {
             commerce["abandons"] = ["value": 1]
         }
 
+        let xdmFields: [String: Any] = [
+            "commerce": commerce,
+            "productListItems": [productListItem]
+        ]
+
+        // Reaches whichever conversation was opened last: the SDK's chat UI or the headless one.
         Concierge.sendDataHandoff(
             routingHint: routingHint,
-            xdmFields: [
-                "commerce": commerce,
-                "productListItems": [productListItem]
-            ],
+            xdmFields: xdmFields,
             localMessage: localMessage
         ) { result in
             Log.debug(label: "ConciergeDemoApp", "Checkout data handoff (\(routingHint)) response: \(String(describing: result))")

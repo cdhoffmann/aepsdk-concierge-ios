@@ -56,10 +56,16 @@ class ConciergeChatService: NSObject {
 
     // MARK: - Initialization
 
+    /// Whether SSE lines are framed on bytes across deliveries even without a native card renderer.
+    /// Headless conversations always need it: their elements can be as large as a native card's.
+    private let buffersSSEFrames: Bool
+
     init(configuration: ConciergeConfiguration,
-         urlSessionConfiguration: URLSessionConfiguration = .default) {
+         urlSessionConfiguration: URLSessionConfiguration = .default,
+         buffersSSEFrames: Bool = false) {
         self.configuration = configuration
-        
+        self.buffersSSEFrames = buffersSSEFrames
+
         super.init()
 
         session = URLSession(configuration: urlSessionConfiguration, delegate: self, delegateQueue: nil)
@@ -344,6 +350,12 @@ class ConciergeChatService: NSObject {
         session.invalidateAndCancel()
     }
 
+    /// Releases the URL session, which retains this service as its delegate until invalidated.
+    /// Feedback already sent is allowed to finish.
+    func invalidate() {
+        session.finishTasksAndInvalidate()
+    }
+
     private func disconnect() {
         dataTask?.cancel()
         dataTask = nil
@@ -360,7 +372,7 @@ extension ConciergeChatService: URLSessionDataDelegate {
         if let existing = sseFramingStates[dataTask.taskIdentifier] {
             state = existing
         } else {
-            state = SSEFramingState(usesNativeFraming: NativeCardRegistry.hasAnyRenderer)
+            state = SSEFramingState(usesNativeFraming: buffersSSEFrames || NativeCardRegistry.hasAnyRenderer)
             sseFramingStates[dataTask.taskIdentifier] = state
         }
 
@@ -408,6 +420,20 @@ extension ConciergeChatService: URLSessionDataDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let state = sseFramingStates.removeValue(forKey: task.taskIdentifier)
+        // A final event the server did not newline-terminate is still a complete event. Flushed
+        // before the handlers are cleared below, since it is delivered through `onChunkHandler`.
+        if error == nil, let state, state.usesNativeFraming, !state.lineBuffer.isEmpty,
+           let line = String(data: state.lineBuffer, encoding: .utf8) {
+            processSSELine(line)
+        }
+
+        // Cleared before `onComplete` runs: the completion may start the next turn (ex: an app
+        // sending as soon as the last one ends), whose new handlers and task must not be wiped.
+        let onCompleteHandler = self.onCompleteHandler
+        onChunkHandler = nil
+        self.onCompleteHandler = nil
+        if error == nil { disconnect() }
+
         if let error = error {
             // Handle connection errors
             Log.warning(label: LOG_TAG, "An error occurred while connecting to the Concierge server: \(error.localizedDescription)")
@@ -421,18 +447,9 @@ extension ConciergeChatService: URLSessionDataDelegate {
                 onCompleteHandler?(.unreachable)
             }
         } else {
-            // A final event the server did not newline-terminate is still a complete event.
-            if let state, state.usesNativeFraming, !state.lineBuffer.isEmpty,
-               let line = String(data: state.lineBuffer, encoding: .utf8) {
-                processSSELine(line)
-            }
             // Connection completed (e.g., server closed connection)
             Log.trace(label: LOG_TAG, "Concierge server connection closed.")
             onCompleteHandler?(nil)
-            disconnect()
         }
-        // Clean up handlers
-        onChunkHandler = nil
-        onCompleteHandler = nil
     }
 }

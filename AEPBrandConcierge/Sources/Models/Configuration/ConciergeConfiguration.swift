@@ -40,6 +40,8 @@ public struct ConciergeConfiguration: Codable {
         }
     }
     private var _sessionId: String?
+    /// Whether this configuration names its own session instead of using `SessionManager`'s.
+    var hasExplicitSessionId: Bool { _sessionId != nil }
     var surfaces: [String] = []
 
     enum CodingKeys: String, CodingKey {

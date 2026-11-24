@@ -64,6 +64,12 @@ final class MockChatService: ConciergeChatService {
     }
 
     private(set) var cancelActiveStreamCallCount = 0
+    private(set) var invalidateCallCount = 0
+
+    override func invalidate() {
+        invalidateCallCount += 1
+        super.invalidate()
+    }
 
     /// Whether cancelling reports a completion. True mirrors the real delegate when a `dataTask` is
     /// in flight: the cancellation surfaces as an ordinary connection failure. Set false to model

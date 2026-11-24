@@ -32,6 +32,7 @@ final class ConciergeTests: XCTestCase {
         // These cases all assert the "no active session" branch, so make that precondition
         // explicit rather than depending on no other test having left a session behind.
         Concierge.currentSession = nil
+        ConciergeActiveConversation.resetForTesting()
         ConciergeOverlayManager.shared.hideChat()
         ConciergeOverlayManager.shared.replaceChat(nil)
         let boundary = ConciergeIdentityBoundary.shared
@@ -52,6 +53,7 @@ final class ConciergeTests: XCTestCase {
         concierge.identityResetSessionsPreparedForTesting = nil
         Concierge.speechCapturer = nil
         Concierge.currentSession = nil
+        ConciergeActiveConversation.resetForTesting()
         ConciergeOverlayManager.shared.hideChat()
         ConciergeOverlayManager.shared.replaceChat(nil)
         if let hosted = Concierge.presentedUIKitController {
@@ -316,6 +318,29 @@ final class ConciergeTests: XCTestCase {
 
         XCTAssertEqual(accepted(response), false)
         XCTAssertEqual(errorCode(of: response), "no_active_session")
+    }
+
+    @MainActor
+    func test_validPayload_withOnlyHeadlessConversation_deliversHandoffToIt() async {
+        let configuration = ConciergeConfiguration()
+        let transport = MockChatService(configuration: configuration)
+        transport.plannedChunks = [ConversationPayload(conversationId: "conv-1", interactionId: "turn-1", request: nil,
+                                                       response: ConversationResponse(message: "Thanks for your order", promptSuggestions: nil, multimodalElements: nil, sources: nil, linkHints: nil, state: nil, feedback: nil),
+                                                       state: "completed", key: nil, value: nil, maxAge: nil)]
+        let generation = ConciergeIdentityBoundary.shared.synchronized { ConciergeIdentityBoundary.shared.generation }
+        let core = ConciergeConversationCore(configuration: configuration, transport: transport,
+                                             identityGeneration: generation, dispatch: { _ in })
+        let conversation = ConciergeConversation(core: core, dispatch: { _ in })
+        ConciergeActiveConversation.activate(conversation)
+
+        let payload = ConciergeDataHandoffEvent(routingHint: "successful-checkout",
+                                                xdmFields: ["commerce": ["order": ["purchaseID": "123"]]],
+                                                localMessage: "Order confirmed")
+        let response = await dispatchDataHandoff(payload: payload)
+
+        XCTAssertEqual(accepted(response), true)
+        XCTAssertEqual(transport.lastQuery, "successful-checkout")
+        XCTAssertEqual(conversation.messages.map(\.text), ["Order confirmed", "Thanks for your order"])
     }
 
     func test_validPayload_withLocalMessage_withoutActiveSession_respondsNoActiveSession() async {

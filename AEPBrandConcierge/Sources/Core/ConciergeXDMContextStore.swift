@@ -76,11 +76,10 @@ final class ConciergeXDMContextStore {
     }
 
     private static func validate(_ fields: [String: Any]) throws {
-        guard fields[ConciergeConstants.Request.Keys.IDENTITY_MAP] == nil else {
-            throw ConciergeXDMContextError.reservedKeyCollision
-        }
-        guard JSONSerialization.isValidJSONObject(fields) else {
-            throw ConciergeXDMContextError.invalidValue
+        switch XDMFieldsValidator.violation(in: fields, allowsEmpty: true) {
+        case .reservedKey: throw ConciergeXDMContextError.reservedKeyCollision
+        case .invalidValue: throw ConciergeXDMContextError.invalidValue
+        case .empty, nil: return
         }
     }
 
@@ -119,6 +118,25 @@ final class ConciergeXDMContextStore {
             return string
         }
         return value
+    }
+}
+
+/// The rules every app-supplied XDM fragment must meet: `updateXDMContext` and `sendDataHandoff`
+/// both check them here, then report a violation in their own error type.
+enum XDMFieldsValidator {
+    enum Violation {
+        case empty
+        /// A value isn't JSON-serializable.
+        case invalidValue
+        /// The SDK-managed `identityMap` top-level key was used.
+        case reservedKey
+    }
+
+    static func violation(in fields: [String: Any], allowsEmpty: Bool) -> Violation? {
+        if !allowsEmpty, fields.isEmpty { return .empty }
+        if fields[ConciergeConstants.Request.Keys.IDENTITY_MAP] != nil { return .reservedKey }
+        if !JSONSerialization.isValidJSONObject(fields) { return .invalidValue }
+        return nil
     }
 }
 

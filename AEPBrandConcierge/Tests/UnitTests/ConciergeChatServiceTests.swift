@@ -1327,6 +1327,27 @@ final class ConciergeChatServiceSSEFramingTests: XCTestCase {
         XCTAssertEqual(messages, ["legacy"], "Legacy delivery does not reassemble partial lines")
     }
 
+    func test_streamChat_bufferedFraming_reassemblesSplitLinesWithoutRenderers() {
+        NativeCardRegistry.resetForTesting()
+        let service = makeService(protocolClass: PausedSSEURLProtocol.self, buffersSSEFrames: true)
+        let session = URLSession(configuration: .ephemeral)
+        defer {
+            service.invalidateTransportForIdentityReset()
+            session.invalidateAndCancel()
+        }
+        var messages: [String] = []
+        service.streamChat("q", token: nil, onChunk: { messages.append($0.response?.message ?? "") },
+                           onComplete: { _ in })
+        let task = session.dataTask(with: URL(string: "https://test.example.com")!)
+
+        let fragmented = Data(event("fragmented", state: "completed").utf8)
+        let midpoint = fragmented.count / 2
+        service.urlSession(session, dataTask: task, didReceive: fragmented.prefix(midpoint))
+        XCTAssertEqual(messages, [], "A partial line waits for the rest")
+        service.urlSession(session, dataTask: task, didReceive: fragmented.dropFirst(midpoint))
+        XCTAssertEqual(messages, ["fragmented"])
+    }
+
     func test_streamChat_withoutRenderersDeliversOpaqueCustomAndAdjacentProduct() {
         NativeCardRegistry.resetForTesting()
         let service = makeService(protocolClass: PausedSSEURLProtocol.self)
@@ -1485,7 +1506,8 @@ final class ConciergeChatServiceSSEFramingTests: XCTestCase {
         XCTAssertEqual(elements[2].rawElement["value"] as? Int, 42)
     }
 
-    private func makeService(protocolClass: AnyClass = FragmentedSSEURLProtocol.self) -> ConciergeChatService {
+    private func makeService(protocolClass: AnyClass = FragmentedSSEURLProtocol.self,
+                             buffersSSEFrames: Bool = false) -> ConciergeChatService {
         let model = ConciergeConfiguration(consentCollectValue: "y",
                                            datastream: "ds-123",
                                            ecid: "ecid-123",
@@ -1493,7 +1515,8 @@ final class ConciergeChatServiceSSEFramingTests: XCTestCase {
                                            surfaces: ["web://test.adobe.com/surface"])
         let sessionConfig = URLSessionConfiguration.ephemeral
         sessionConfig.protocolClasses = [protocolClass]
-        return ConciergeChatService(configuration: model, urlSessionConfiguration: sessionConfig)
+        return ConciergeChatService(configuration: model, urlSessionConfiguration: sessionConfig,
+                                    buffersSSEFrames: buffersSSEFrames)
     }
 
     private func event(_ message: String, state: String) -> String {

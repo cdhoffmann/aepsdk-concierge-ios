@@ -29,15 +29,15 @@ enum TurnKind {
     /// An app-originated data handoff, such as a checkout outcome.
     ///
     /// Failures stay out of the transcript - the user never asked for this turn and may not know
-    /// one was sent, so an error bubble would appear unprompted. The turn is bounded, because an
-    /// app is waiting on a completion that has to arrive either way.
-    ///
-    /// - Parameters:
-    ///   - noResponse: How long the service may stay silent before the turn is abandoned. Catches a
-    ///     backend that never answers at all, which is the common hang and worth failing fast on.
-    ///   - ceiling: The hard wall-clock bound on the whole turn. Generous by design: cancelling a
-    ///     turn that is actively streaming throws away a reply the user was about to see.
-    case handoff(noResponse: TimeInterval, ceiling: TimeInterval)
+    /// one was sent, so an error bubble would appear unprompted. The turn is bounded by `limits`,
+    /// because an app is waiting on a completion that has to arrive either way.
+    case handoff(HandoffLimits)
+
+    /// The bounds on this turn, or `nil` when it is unbounded.
+    var limits: HandoffLimits? {
+        if case .handoff(let limits) = self { return limits }
+        return nil
+    }
 
     /// Whether a failed turn leaves a notice in the transcript.
     var rendersFailures: Bool {
@@ -89,8 +89,8 @@ final class ChatTurn {
     private(set) var hasUsedBackgroundRecovery = false
 
     private var outcome: ((ConciergeError?) -> Void)?
-    private var noResponseDeadline: DispatchWorkItem?
-    private var ceilingDeadline: DispatchWorkItem?
+    /// `nil` for a `.typed` turn, which is unbounded.
+    private let deadlines: HandoffDeadlines?
 
     init(placeholderId: UUID,
          kind: TurnKind,
@@ -100,6 +100,7 @@ final class ChatTurn {
         self.kind = kind
         self.allowsBackgroundRecovery = allowsBackgroundRecovery
         self.outcome = outcome
+        self.deadlines = kind.limits.map { HandoffDeadlines(limits: $0, queue: .main) }
     }
 
     func noteAppBackgrounded() {
@@ -143,7 +144,7 @@ final class ChatTurn {
     func resolve(_ error: ConciergeError?) -> Bool {
         let wasPending = !isResolved
         isResolved = true
-        cancelDeadlines()
+        deadlines?.disarm()
 
         guard let outcome = outcome else { return wasPending }
         self.outcome = nil
@@ -155,8 +156,7 @@ final class ChatTurn {
     ///
     /// The ceiling stays armed: a turn that is streaming is healthy, but it is still bounded.
     func noteResponseStarted() {
-        noResponseDeadline?.cancel()
-        noResponseDeadline = nil
+        deadlines?.disarmNoResponse()
     }
 
     /// Arms the hard ceiling, from the moment the turn is submitted.
@@ -166,8 +166,8 @@ final class ChatTurn {
     ///
     /// `handler` receives the interval that elapsed, so the reported timeout names the real bound.
     func armCeiling(_ handler: @escaping (TimeInterval) -> Void) {
-        guard case .handoff(_, let ceiling) = kind, !isResolved else { return }
-        ceilingDeadline = Self.schedule(after: ceiling, handler: handler)
+        guard !isResolved else { return }
+        deadlines?.armCeiling(Self.onMainActor(handler))
     }
 
     /// Arms the fast "the service never answered" cap, at the moment the request actually goes out.
@@ -177,25 +177,13 @@ final class ChatTurn {
     /// an app whose token provider was slower than the cap had every handoff reported as a delivery
     /// timeout for a request that had never left the device. No-op for a `.typed` turn.
     func armNoResponseCap(_ handler: @escaping (TimeInterval) -> Void) {
-        guard case .handoff(let noResponse, _) = kind, !isResolved else { return }
-        noResponseDeadline = Self.schedule(after: noResponse, handler: handler)
-    }
-
-    private func cancelDeadlines() {
-        noResponseDeadline?.cancel()
-        noResponseDeadline = nil
-        ceilingDeadline?.cancel()
-        ceilingDeadline = nil
+        guard !isResolved else { return }
+        deadlines?.armNoResponse(Self.onMainActor(handler))
     }
 
     /// The hop to the main actor mirrors how the rest of the controller schedules work, and keeps
     /// this usable on the iOS 15 deployment target (`MainActor.assumeIsolated` is iOS 17+).
-    private static func schedule(after interval: TimeInterval,
-                                 handler: @escaping (TimeInterval) -> Void) -> DispatchWorkItem {
-        let workItem = DispatchWorkItem {
-            Task { @MainActor in handler(interval) }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: workItem)
-        return workItem
+    nonisolated private static func onMainActor(_ handler: @escaping (TimeInterval) -> Void) -> (TimeInterval) -> Void {
+        { interval in Task { @MainActor in handler(interval) } }
     }
 }

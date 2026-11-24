@@ -205,3 +205,50 @@ enum ConciergeTrackingEvent {
         return data
     }
 }
+
+// MARK: - Shared event builders
+
+/// Builds the events whose payload is derived from content, so the SDK's chat UI and a custom UI
+/// (through `ConciergeConversation.track`) report identical data.
+extension ConciergeTrackingEvent {
+    /// `cardsRendered` for the product cards shown in one turn, or `nil` if none has product info.
+    static func cardsRendered(for elements: [MultimodalElement]) -> ConciergeTrackingEvent? {
+        let dicts: [[String: Any]] = elements.compactMap { element in
+            guard let info = element.entityInfo else { return nil }
+            var dict: [String: Any] = [:]
+            if let name = info.productName { dict["productName"] = name }
+            if let url = info.productPageURL { dict["productPageURL"] = url }
+            if let price = info.productPrice { dict["productPrice"] = price }
+            return dict
+        }
+        guard !dicts.isEmpty else { return nil }
+        return .cardsRendered(displayMode: dicts.count == 1 ? "single" : "carousel", elements: dicts)
+    }
+
+    /// `cardClicked`, followed by `linkClicked` when the card links to a product page.
+    static func cardClickedEvents(name: String?,
+                                  description: String?,
+                                  pageURL: String?,
+                                  price: String?,
+                                  badge: String?) -> [ConciergeTrackingEvent] {
+        var dict: [String: Any] = [:]
+        if let name { dict["productName"] = name }
+        if let description { dict["productDescription"] = description }
+        if let pageURL { dict["productPageURL"] = pageURL }
+        if let price { dict["productPrice"] = price }
+        if let badge { dict["productBadge"] = badge }
+        var events: [ConciergeTrackingEvent] = [.cardClicked(element: dict)]
+        if let pageURL {
+            events.append(.linkClicked(url: pageURL, origin: ConciergeConstants.TrackingEvent.LinkClickOrigin.PRODUCT_CARD))
+        }
+        return events
+    }
+
+    /// `ctaButtonClicked` (ex: "Buy Now"), followed by its `linkClicked`.
+    /// A button without a URL reports only `ctaButtonClicked`, with an empty `linkUrl`.
+    static func ctaButtonClickedEvents(label: String, url: String?) -> [ConciergeTrackingEvent] {
+        guard let url, !url.isEmpty else { return [.ctaButtonClicked(label: label, linkUrl: "")] }
+        return [.ctaButtonClicked(label: label, linkUrl: url),
+                .linkClicked(url: url, origin: ConciergeConstants.TrackingEvent.LinkClickOrigin.CTA)]
+    }
+}

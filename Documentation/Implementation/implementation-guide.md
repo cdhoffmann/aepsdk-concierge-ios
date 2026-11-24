@@ -292,7 +292,7 @@ Concierge.sendDataHandoff(
   | `emptyXdmFields` | `empty_xdm_fields` | `xdmFields` was empty. |
   | `invalidXdmFieldValue` | `invalid_xdm_field_value` | `xdmFields` contained a value that isn't JSON-serializable. |
   | `reservedKeyCollision` | `reserved_key_collision` | `xdmFields` used a reserved top-level key (e.g. `identityMap`). |
-  | `noActiveSession` | `no_active_session` | No Concierge chat session was active, or the existing one had expired. Show or resolve a session, then retry. |
+  | `noActiveSession` | `no_active_session` | No Concierge chat session or [headless conversation](headless.md) was open, or the chat's session had expired. Show or resolve a session, then retry. |
   | `chatInProgress` | `chat_in_progress` | Another turn is already being processed. Nothing was started or rendered; retry once the chat is idle. |
   | `deliveryFailed(String?)` | `delivery_failed` | Brand Concierge returned an error or the request couldn't be completed. Carries the underlying service detail when available. |
   | `emptyResponse` | `empty_response` | The stream completed with no renderable content. |

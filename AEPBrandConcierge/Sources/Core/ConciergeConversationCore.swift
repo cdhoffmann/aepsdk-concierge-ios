@@ -14,162 +14,79 @@ import AEPCore
 import AEPServices
 import Foundation
 
-/// UI-free access to a Brand Concierge conversation, for apps that render their own chat UI.
-///
-/// Obtain one with `Concierge.conversationCore(surfaces:)`. The core owns everything that has to
-/// be identical between the SDK's chat UI and a custom one: configuration, session, auth token
-/// pass-through, XDM context, the SSE transport and feedback events. It holds no transcript and
-/// does no rendering - each `send` yields the raw `ConversationPayload` chunks from the service.
-///
-/// One turn runs at a time; `send` fails with `ConciergeError.turnInProgress` while another is
-/// streaming. After an identity reset (`MobileCore.resetIdentities()`) the core is ended for good
-/// and every call fails with `ConciergeError.conversationEnded`; request a new core.
-///
-/// The SDK's own chat UI is built on this type.
-public final class ConciergeConversationCore {
+/// The transport-facing half of a conversation: configuration, session, auth token, XDM context,
+/// the SSE stream and feedback. Holds no transcript and no turn rules; `ConciergeConversation`
+/// owns those, for the SDK's chat UI and headless apps alike.
+final class ConciergeConversationCore {
     private let LOG_TAG = "ConciergeConversationCore"
 
-    /// The configuration resolved for the surfaces this core was created with.
-    public let configuration: ConciergeConfiguration
-
+    let configuration: ConciergeConfiguration
     let transport: ConciergeChatService
+    /// The backend session this conversation runs on, fixed at creation. A conversation never moves
+    /// to another session; when this one expires the conversation closes.
+    let sessionId: String
+    /// Whether `sessionId` came from `SessionManager` and so can expire. A configuration that names
+    /// its own session (tests) never does.
+    private let tracksPersistedSession: Bool
     private let identityGeneration: Int
     private let lock = NSLock()
-    private var streaming = false
     private var ended = false
-    /// Where `sendTurn` reports its analytics events. Injectable for tests.
+    /// Where feedback events are reported.
     let dispatch: (Event) -> Void
 
     init(configuration: ConciergeConfiguration, transport: ConciergeChatService, identityGeneration: Int,
          dispatch: @escaping (Event) -> Void = { MobileCore.dispatch(event: $0) }) {
         self.configuration = configuration
         self.transport = transport
+        self.sessionId = transport.resolveSessionID()
+        self.tracksPersistedSession = !configuration.hasExplicitSessionId
         self.identityGeneration = identityGeneration
         self.dispatch = dispatch
     }
 
     convenience init(configuration: ConciergeConfiguration,
                      urlSessionConfiguration: URLSessionConfiguration = .default,
-                     identityGeneration: Int? = nil) {
+                     buffersSSEFrames: Bool = false,
+                     identityGeneration: Int? = nil,
+                     dispatch: @escaping (Event) -> Void = { MobileCore.dispatch(event: $0) }) {
         let generation = identityGeneration ?? ConciergeIdentityBoundary.shared.synchronized {
             ConciergeIdentityBoundary.shared.generation
         }
         self.init(configuration: configuration,
-                  transport: ConciergeChatService(configuration: configuration, urlSessionConfiguration: urlSessionConfiguration),
-                  identityGeneration: generation)
+                  transport: ConciergeChatService(configuration: configuration, urlSessionConfiguration: urlSessionConfiguration,
+                                                 buffersSSEFrames: buffersSSEFrames),
+                  identityGeneration: generation,
+                  dispatch: dispatch)
     }
 
-    // MARK: - Public API
+    /// Whether the session has passed its TTL, or `SessionManager` has since moved to another one.
+    var isSessionExpired: Bool {
+        tracksPersistedSession && SessionManager.shared.currentSessionIdIfActive != sessionId
+    }
 
-    /// The backend session ID the next turn will use.
-    public var sessionId: String { transport.resolveSessionID() }
-
-    /// Whether the conversation was ended by an identity reset. An ended core rejects every call.
-    public var isEnded: Bool {
+    /// Whether an identity reset ended the conversation. An ended core sends nothing.
+    var isEnded: Bool {
         lock.lock()
         defer { lock.unlock() }
         return ended || !ConciergeIdentityBoundary.shared.admits(identityGeneration)
     }
 
-    /// Sends `query` and streams the service's response.
-    ///
-    /// The auth token registered with `Concierge.setAuthTokenProvider` and the context set with
-    /// `Concierge.updateXDMContext` are attached automatically. `xdmFields` are merged over that
-    /// context for this turn only.
-    ///
-    /// Chunks are yielded as received. `IN_PROGRESS` chunks carry a text delta; the final
-    /// `COMPLETED` chunk carries the full message plus products, suggestions and sources.
-    /// The stream finishes after the service closes the connection, or throws a `ConciergeError`.
-    /// Cancelling the consuming task cancels the request.
-    public func send(_ query: String, xdmFields: [String: Any]? = nil) -> AsyncThrowingStream<ConversationPayload, Error> {
-        payloads(for: query, context: requestContext(extraXDMFields: xdmFields))
-    }
-
-    /// Sends `query` and streams the response as an assembled `ConciergeTurn`, reporting the
-    /// turn's analytics events automatically.
-    ///
-    /// Yields an updated turn for every chunk that changes it; the last one has `isComplete`.
-    /// Reports `querySubmitted`, `responseStarted`, `responseCompleted`, `cardsRendered` and
-    /// `errorOccurred` exactly as the SDK's chat UI does, so the app tracks only taps.
-    /// A response with no text and no products throws `ConciergeError.invalidResponseData`.
-    public func sendTurn(_ query: String, xdmFields: [String: Any]? = nil) -> AsyncThrowingStream<ConciergeTurn, Error> {
-        let context = requestContext(extraXDMFields: xdmFields)
-        let payloads = payloads(for: query, context: context)
-        return AsyncThrowingStream { continuation in
-            let task = Task { [self] in
-                track(.querySubmitted(query: query, xdmFields: context.xdmFields))
-                var turn = ConciergeTurn()
-                do {
-                    for try await payload in payloads {
-                        if turn.apply(payload) {
-                            track(.responseStarted(conversationId: turn.conversationId, interactionId: turn.interactionId))
-                        }
-                        continuation.yield(turn)
-                    }
-                    try Task.checkCancellation()
-                    guard !turn.isEmpty else { throw ConciergeError.invalidResponseData }
-                    track(.responseCompleted(conversationId: turn.conversationId, interactionId: turn.interactionId))
-                    if !turn.products.isEmpty {
-                        track(.productsRendered(turn.products))
-                    }
-                    continuation.finish()
-                } catch {
-                    if !(error is CancellationError) {
-                        track(.errorOccurred(error.localizedDescription))
-                    }
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { reason in
-                if case .cancelled = reason { task.cancel() }
-            }
-        }
-    }
-
-    private func payloads(for query: String, context: RequestContext) -> AsyncThrowingStream<ConversationPayload, Error> {
-        AsyncThrowingStream { continuation in
-            if let rejection = beginStreaming() {
-                continuation.finish(throwing: rejection)
-                return
-            }
-            let task = Task { [self] in
-                let token = await ConciergeAuthTokenResolver.shared.resolveToken()
-                ConciergeIdentityBoundary.shared.synchronized {
-                    guard !Task.isCancelled, !self.isEnded else {
-                        self.endStreaming()
-                        continuation.finish(throwing: self.isEnded ? ConciergeError.conversationEnded : CancellationError())
-                        return
-                    }
-                    self.stream(query, token: token, context: context,
-                                onChunk: { continuation.yield($0) },
-                                onComplete: { error in
-                                    self.endStreaming()
-                                    if let error {
-                                        continuation.finish(throwing: error)
-                                    } else {
-                                        continuation.finish()
-                                    }
-                                })
-                }
-            }
-            continuation.onTermination = { [weak self] reason in
-                guard case .cancelled = reason else { return }
-                task.cancel()
-                self?.transport.cancelActiveStream()
-            }
-        }
-    }
-
-    /// Cancels the turn in flight, if any. Its stream finishes with an error.
-    public func cancel() {
+    /// Cancels the request in flight, if any.
+    func cancel() {
         transport.cancelActiveStream()
+    }
+
+    /// Cancels the request in flight and releases the transport. Feedback already sent finishes.
+    func close() {
+        transport.cancelActiveStream()
+        transport.invalidate()
     }
 
     /// Sends end-user feedback for one agent response.
     ///
     /// `conversationId` and `interactionId` come from the response's `ConversationPayload`.
     /// Also dispatches the `feedbackSubmitted` tracking event.
-    public func sendFeedback(conversationId: String?,
+    func sendFeedback(conversationId: String?,
                              interactionId: String?,
                              sentiment: FeedbackSentiment,
                              reasons: [String] = [],
@@ -184,6 +101,11 @@ public final class ConciergeConversationCore {
                                           sentiment: sentiment,
                                           reasons: reasons,
                                           notes: notes)
+        dispatch(ConciergeTrackingEvent.feedbackSubmitted(conversationId: conversationId ?? "unknown",
+                                                          interactionId: interactionId ?? "unknown",
+                                                          feedbackType: sentiment == .positive ? "positive" : "negative",
+                                                          selectedOptions: reasons,
+                                                          notes: notes).toEvent())
         Task { [self] in
             let token = await ConciergeAuthTokenResolver.shared.resolveToken()
             ConciergeIdentityBoundary.shared.synchronized {
@@ -205,7 +127,7 @@ public final class ConciergeConversationCore {
     func requestContext(sessionID: String? = nil,
                         heldXDMFields: [String: Any]? = nil,
                         extraXDMFields: [String: Any]? = nil) -> RequestContext {
-        let resolvedSessionID = sessionID ?? transport.resolveSessionID()
+        let resolvedSessionID = sessionID ?? sessionId
         var merged = heldXDMFields ?? ConciergeXDMContextStore.shared.snapshot(for: resolvedSessionID)
         if let extraXDMFields {
             merged = ConciergeXDMContextStore.merging(extraXDMFields, over: merged)
@@ -271,24 +193,4 @@ public final class ConciergeConversationCore {
         ]
     }
 
-    // MARK: - Private
-
-    private func track(_ event: ConciergeAnalyticsEvent) {
-        event.trackingEvents.forEach { dispatch($0.toEvent()) }
-    }
-
-    private func beginStreaming() -> ConciergeError? {
-        if isEnded { return .conversationEnded }
-        lock.lock()
-        defer { lock.unlock() }
-        guard !streaming else { return .turnInProgress }
-        streaming = true
-        return nil
-    }
-
-    private func endStreaming() {
-        lock.lock()
-        streaming = false
-        lock.unlock()
-    }
 }

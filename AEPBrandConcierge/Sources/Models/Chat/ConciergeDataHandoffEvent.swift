@@ -42,6 +42,17 @@ struct ConciergeDataHandoffEvent {
         self.xdmFields = xdmFields
         self.localMessage = localMessage
     }
+
+    /// The first rule `xdmFields` breaks, or `nil` if it is a valid handoff payload. Used by
+    /// `Concierge.sendDataHandoff`, whichever conversation (SDK UI or headless) receives it.
+    static func validationError(for xdmFields: [String: Any]) -> ConciergeDataHandoffError? {
+        switch XDMFieldsValidator.violation(in: xdmFields, allowsEmpty: false) {
+        case .empty: return .emptyXdmFields
+        case .invalidValue: return .invalidXdmFieldValue
+        case .reservedKey: return .reservedKeyCollision
+        case nil: return nil
+        }
+    }
 }
 
 /// Any error encountered while forwarding a `Concierge.sendDataHandoff(...)` call.

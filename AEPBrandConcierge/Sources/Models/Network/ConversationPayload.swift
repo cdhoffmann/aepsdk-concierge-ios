@@ -27,7 +27,7 @@ public struct ConversationPayload: Codable {
     public let maxAge: Int?
 }
 
-public extension ConversationPayload {
+extension ConversationPayload {
     /// An `IN_PROGRESS` chunk: `response.message` is a text delta to append.
     var isInProgress: Bool { state == ConciergeConstants.StreamState.IN_PROGRESS }
 
