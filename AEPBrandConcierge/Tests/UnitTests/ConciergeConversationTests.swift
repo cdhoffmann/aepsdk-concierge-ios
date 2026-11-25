@@ -93,6 +93,34 @@ final class ConciergeConversationTests: XCTestCase {
         XCTAssertEqual(conversation.messages.last?.text, "ok")
     }
 
+    func test_httpStatus_setsFailedWithCode_reportsError_andCanBeRetried() async throws {
+        transport.plannedError = .httpStatus(500)
+
+        conversation.send("hi")
+        try await waitUntil { self.conversation.state == .failed(.httpStatus(500)) }
+        XCTAssertEqual(conversation.messages.map(\.role), [.user])
+        XCTAssertEqual(dispatched.last, Name.ERROR_OCCURRED)
+        XCTAssertEqual(transport.streamChatCallCount, 1, "an HTTP error is not resent in the background")
+
+        transport.plannedError = nil
+        transport.plannedChunks = [payload(state: "completed", message: "ok")]
+        XCTAssertEqual(conversation.retry(), .accepted)
+        try await waitUntil { self.conversation.state == .idle }
+        XCTAssertEqual(transport.streamChatCallCount, 2)
+    }
+
+    func test_deliverHandoff_httpStatus_reportsCodeToCaller_andErrorOccurred() async throws {
+        transport.plannedError = .httpStatus(401)
+        var outcome: ConciergeError?
+
+        conversation.deliverHandoff(routingHint: "x", xdmFields: ["a": 1]) { outcome = $0 }
+        try await waitUntil { outcome != nil }
+
+        XCTAssertEqual(outcome, .httpStatus(401))
+        XCTAssertEqual(conversation.state, .failed(.httpStatus(401)))
+        XCTAssertEqual(dispatched.last, Name.ERROR_OCCURRED)
+    }
+
     func test_emptyResponse_addsNoAgentMessage_andReportsError() async throws {
         transport.plannedChunks = [payload(state: "completed", message: "")]
 

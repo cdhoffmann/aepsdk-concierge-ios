@@ -178,7 +178,7 @@ public enum ConciergeInteraction {
     case linkHintClicked(LinkHint)       // → linkClicked, origin LINK_HINT
 }
 
-public enum ConciergeError: Error, Equatable { …existing…, case configurationUnavailable }  // now public
+public enum ConciergeError: Error, Equatable { …existing…, case configurationUnavailable, case httpStatus(Int) }  // now public
 ```
 
 **Element classification** is one rule set, `MultimodalElement.kind`, shared by the UI's `ResponseElementResolver` and `ConciergeElement`. So headless sees exactly what the UI would render:
@@ -214,6 +214,7 @@ These are the behaviors that both platforms must match. Each row is covered by `
 | Complete | Fills `elements`, `sources`, `linkHints`, `promptSuggestions`, and `feedbackEnabled`. The SDK reports `responseCompleted` and `cardsRendered` (if cards are present). State becomes `idle`. |
 | Empty response (no text, no renderable elements) | The agent message is removed. For a typed turn the SDK reports `errorOccurred`. State becomes `failed(.invalidResponseData)`. |
 | Transport error | The agent message is removed and the SDK reports `errorOccurred`. State becomes `failed(error)`, carrying the `ConciergeError`. |
+| Non-2xx HTTP status | The service logs the code and cancels before reading the body. Handled as a transport error with `failed(.httpStatus(code))`, for typed turns and handoffs; `errorOccurred` carries the code. Not resent in the background (only `.timeout`/`.unreachable` are); the app can `retry()`. |
 | `retry()` after a failed typed turn | Resends the same text **without** appending another user message. Reports `querySubmitted` again. Returns `.accepted`. |
 | `retry()` otherwise | `.nothingToRetry` (not failed, or the failed turn was a handoff). Admission refusals (`.closed`, `.inProgress`, `.resetPending`) take precedence. |
 | `cancel()` | Stops the stream and keeps the partial text. `isStreaming` becomes `false` and state becomes `idle`. |
@@ -360,8 +361,8 @@ These are all relative to `dev`. Changes are additive for public API, and the UI
 | `Core/Concierge.swift` | Identity reset and handoff routing over the live conversations |
 | `Core/Concierge+PublicAPI.swift`, `Presentation/ConciergeChatSession.swift` | A UI session's ID is its conversation's pinned session; a closed conversation is never reused |
 | `Core/ConciergeTrackingEvent.swift` | `linkHintClicked` origin; interaction → event mapping; CTA without URL |
-| `Models/Network/ConciergeError.swift` | Made public and `Equatable`; `configurationUnavailable` added |
-| `Services/ConciergeChatService.swift` | `buffersSSEFrames` (headless), `invalidate()` |
+| `Models/Network/ConciergeError.swift` | Made public and `Equatable`; `configurationUnavailable` and `httpStatus(Int)` added |
+| `Services/ConciergeChatService.swift` | `buffersSSEFrames` (headless), `invalidate()`; chat requests check the HTTP status in `didReceive response`, log it, and fail with `httpStatus(code)` |
 | `ConciergeXDMContextStore.swift`, `ConversationPayload.swift`, `ConciergeDataHandoffEvent.swift`, `ConciergeConfiguration.swift` | Small internal seams |
 
 **Code shared between the UI and headless:**
@@ -417,6 +418,7 @@ These are all relative to `dev`. Changes are additive for public API, and the UI
 | 9 | Live conversations | One per surface set; same-surface replace closes the old one (`replaced`) | One forwarder slot; the old conversation stays usable | Android matches iOS (§8.1 #4) |
 | 10 | Session | Pinned at creation; closes on expiry | Re-resolved per turn | Android matches iOS |
 | 11 | Failure / close detail | `failed(ConciergeError)`, `closed(reason)`, `retry()` | `Failed`, `Closed`, no retry | Android matches iOS |
+| 12 | HTTP status errors | `httpStatus(code)`; checked in `didReceive response` | `ConciergeHttpStatusException` → `INVALID_RESPONSE_DATA` | Android maps to `httpStatus(code)` |
 
 ---
 
@@ -459,7 +461,7 @@ Sizing is rough, for one engineer per platform.
 |---|---|---|---|
 | G2 | Universal SSE buffering | Headless already buffers (§4.8). The SDK UI still uses the legacy framing unless a native card renderer is registered, so a `data:` line split across network chunks can be dropped there. Make buffering universal after a UI regression pass. | S |
 | f5 | Consent read per request | Consent is captured when a conversation is created. A user who opts out mid-conversation still sends with the old value until a new one is created. Existing UI behavior, but headless conversations live longer. Read consent per request through a store updated on Consent shared-state changes; needs a privacy review. | M |
-| G3 | HTTP status mapping (401/429/5xx → typed errors) | Apps need to tell an auth failure from throttling from an outage | S |
+| G3 | HTTP status mapping (401/429/5xx → typed errors) | **Done on iOS:** `httpStatus(code)` lets apps tell auth failures, throttling and outages apart. Remaining: Android parity (§8.2 #12) | S |
 | G6 | `ConciergeError` evolution | Now public, so adding cases breaks exhaustive `switch`. Document `@unknown default`, or freeze the enum and add a `code`. | S |
 | — | Typed-turn timeout policy | Only handoff turns have caps. A hung typed turn stays `responding` until the user cancels. Decide whether to apply a ceiling. | S |
 | — | API review and `@unknown` / `Sendable` audit | `@MainActor` types, `Sendable` conformance on value types, public `init`s for test doubles | S–M |

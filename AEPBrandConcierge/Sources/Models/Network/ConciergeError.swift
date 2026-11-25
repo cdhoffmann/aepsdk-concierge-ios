@@ -23,6 +23,8 @@ public enum ConciergeError: Error, Equatable {
     case timeout(Int)
     case unknown
     case unreachable
+    /// The service answered with a non-2xx HTTP status code (ex: 401, 429, 500).
+    case httpStatus(Int)
     /// Configuration for the requested surfaces was not available (ex: Edge Identity not ready).
     case configurationUnavailable
 }
@@ -44,6 +46,8 @@ extension ConciergeError: LocalizedError {
             return "Unknown error."
         case .unreachable:
             return "Server was unreachable."
+        case .httpStatus(let code):
+            return "Request failed with HTTP status \(code)."
         case .configurationUnavailable:
             return "Concierge configuration is not available."
         }

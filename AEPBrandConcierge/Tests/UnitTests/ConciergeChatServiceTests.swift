@@ -1283,6 +1283,26 @@ private final class FragmentedSSEURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+/// Answers with `statusCode` and a body that would decode as a chunk if it were read.
+private final class StatusSSEURLProtocol: URLProtocol {
+    static var statusCode = 500
+    static var body = Data()
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        if let url = request.url,
+           let response = HTTPURLResponse(url: url, statusCode: Self.statusCode, httpVersion: nil, headerFields: nil) {
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        }
+        client?.urlProtocol(self, didLoad: Self.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 private final class PausedSSEURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -1504,6 +1524,38 @@ final class ConciergeChatServiceSSEFramingTests: XCTestCase {
         XCTAssertFalse(elements[1].hasCompleteRawElement)
         XCTAssertNil(elements[1].entityInfo)
         XCTAssertEqual(elements[2].rawElement["value"] as? Int, 42)
+    }
+
+    func test_streamChat_non2xxStatus_reportsHttpStatus_andReadsNoChunks() {
+        StatusSSEURLProtocol.body = Data(event("ignored", state: "completed").utf8)
+        for statusCode in [401, 429, 500] {
+            StatusSSEURLProtocol.statusCode = statusCode
+            let completed = expectation(description: "status \(statusCode) completed")
+            var chunkCount = 0
+            let service = makeService(protocolClass: StatusSSEURLProtocol.self)
+            service.streamChat("q", token: nil, onChunk: { _ in chunkCount += 1 }, onComplete: { error in
+                XCTAssertEqual(error, .httpStatus(statusCode))
+                completed.fulfill()
+            })
+            wait(for: [completed], timeout: 3)
+            XCTAssertEqual(chunkCount, 0)
+            service.invalidate()
+        }
+    }
+
+    func test_streamChat_2xxStatus_streamsNormally() {
+        StatusSSEURLProtocol.statusCode = 200
+        StatusSSEURLProtocol.body = Data(event("ok", state: "completed").utf8)
+        let completed = expectation(description: "200 completed")
+        var messages: [String] = []
+        let service = makeService(protocolClass: StatusSSEURLProtocol.self)
+        service.streamChat("q", token: nil, onChunk: { messages.append($0.response?.message ?? "") },
+                           onComplete: { error in
+            XCTAssertNil(error)
+            completed.fulfill()
+        })
+        wait(for: [completed], timeout: 3)
+        XCTAssertEqual(messages, ["ok"])
     }
 
     private func makeService(protocolClass: AnyClass = FragmentedSSEURLProtocol.self,

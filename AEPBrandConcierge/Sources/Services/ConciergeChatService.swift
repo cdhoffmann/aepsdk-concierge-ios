@@ -50,6 +50,8 @@ class ConciergeChatService: NSObject {
     }
     // URLSession's delegate queue is serial; only delegate callbacks access these per-task buffers.
     private var sseFramingStates: [Int: SSEFramingState] = [:]
+    /// Non-2xx status codes by task, recorded when the response arrives and reported on completion.
+    private var failedStatusCodes: [Int: Int] = [:]
     private let feedbackLock = NSLock()
     private var feedbackTasks: [UUID: URLSessionDataTask] = [:]
     private var feedbackEndedForIdentityReset = false
@@ -366,6 +368,25 @@ class ConciergeChatService: NSObject {
 
 extension ConciergeChatService: URLSessionDataDelegate {
 
+    /// Rejects a non-2xx response before its body is read. An error body is not in the streaming
+    /// format, so without this check it would surface only as an empty response.
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            completionHandler(.allow)
+            return
+        }
+        let statusCode = httpResponse.statusCode
+        guard (200..<300).contains(statusCode) else {
+            Log.warning(label: LOG_TAG, "Chat request failed with statusCode=\(statusCode)")
+            failedStatusCodes[dataTask.taskIdentifier] = statusCode
+            completionHandler(.cancel)
+            return
+        }
+        Log.trace(label: LOG_TAG, "Chat request accepted with statusCode=\(statusCode)")
+        completionHandler(.allow)
+    }
+
     /// Called each time the server sends a streaming event
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         let state: SSEFramingState
@@ -420,6 +441,7 @@ extension ConciergeChatService: URLSessionDataDelegate {
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let state = sseFramingStates.removeValue(forKey: task.taskIdentifier)
+        let failedStatusCode = failedStatusCodes.removeValue(forKey: task.taskIdentifier)
         // A final event the server did not newline-terminate is still a complete event. Flushed
         // before the handlers are cleared below, since it is delivered through `onChunkHandler`.
         if error == nil, let state, state.usesNativeFraming, !state.lineBuffer.isEmpty,
@@ -432,9 +454,12 @@ extension ConciergeChatService: URLSessionDataDelegate {
         let onCompleteHandler = self.onCompleteHandler
         onChunkHandler = nil
         self.onCompleteHandler = nil
-        if error == nil { disconnect() }
+        if error == nil || failedStatusCode != nil { disconnect() }
 
-        if let error = error {
+        if let failedStatusCode {
+            // The task was cancelled in `didReceive response`; its cancellation error is not the cause.
+            onCompleteHandler?(.httpStatus(failedStatusCode))
+        } else if let error = error {
             // Handle connection errors
             Log.warning(label: LOG_TAG, "An error occurred while connecting to the Concierge server: \(error.localizedDescription)")
             // A timed-out turn is reported distinctly from an unreachable host so a data handoff

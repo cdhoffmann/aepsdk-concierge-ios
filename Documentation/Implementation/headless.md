@@ -92,7 +92,7 @@ struct ChatView: View {
 | --- | --- |
 | `.idle` | Ready to send. |
 | `.responding` | Waiting for or receiving a reply. Show a loading indicator until the agent message appears. |
-| `.failed(ConciergeError)` | The last reply failed, with the reason (ex: `.timeout`, `.unreachable`). Its agent message is removed and the user message stays. The user can send again, or `retry()`. |
+| `.failed(ConciergeError)` | The last reply failed, with the reason (ex: `.timeout`, `.unreachable`, or `.httpStatus(401)` when the service rejects the request). Its agent message is removed and the user message stays. The user can send again, or `retry()`. |
 | `.closed(ConciergeCloseReason)` | The conversation ended: `.closedByApp`, `.replaced`, `.sessionExpired` or `.identityReset`. Use `state.isClosed` to check for any reason. |
 
 Only one reply runs at a time; messages are not queued. `send` returns a `ConciergeSendResult` you can ignore or use to explain why nothing happened:
